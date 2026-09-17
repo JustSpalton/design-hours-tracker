@@ -34,14 +34,6 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
 }
 
-function editorOK(req: Request) {
-  const expected = Netlify.env.get("EDITOR_KEY");
-  if (!expected) return { ok: false, status: 503, error: "Editor PIN is not configured." };
-  const supplied = req.headers.get("x-editor-key") || "";
-  if (supplied !== expected) return { ok: false, status: 401, error: "Editor PIN is incorrect." };
-  return { ok: true, status: 200, error: "" };
-}
-
 function cleanName(value: unknown) { return String(value || "").replace(/\s+/g, " ").trim(); }
 function validDate(value: string) { return /^\d{4}-\d{2}-\d{2}$/.test(value); }
 
@@ -59,14 +51,11 @@ export default async (req: Request, context: Context) => {
     }
 
     if (path === "/api/auth" && req.method === "POST") {
-      const auth = editorOK(req);
-      return auth.ok ? json({ ok: true }) : json({ error: auth.error }, auth.status);
+      return json({ ok: true });
     }
 
     if (!["/api/designers", "/api/import", "/api/holidays"].includes(path)) return json({ error: "Not found" }, 404);
     if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
-    const auth = editorOK(req);
-    if (!auth.ok) return json({ error: auth.error }, auth.status);
 
     const body = await req.json().catch(() => ({})) as any;
     const state = await getState(context);
