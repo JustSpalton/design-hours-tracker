@@ -11,8 +11,8 @@
 <header>
   <div class="brand"><div class="donaldson-wordmark"><span class="donaldson-d">D</span><span>DONALDSON</span></div><h1>Design Hours Tracker</h1></div>
   <div class="actions">
-    <span class="lock" id="editState">View only</span>
-    <button class="secondary" id="unlockBtn">Unlock editing</button>
+    <span class="lock" id="editState" hidden></span>
+    <button class="secondary" id="unlockBtn" hidden></button>
     <button class="secondary" id="refreshBtn">Refresh</button>
   </div>
 </header>
@@ -47,6 +47,7 @@
   </div>
 </main>
 <div class="toast" id="toast"></div>
+<script>sessionStorage.setItem('designHoursEditorKey','open-editing');</script>
 <script src="/app.js"></script>
 </body>
 </html>
