@@ -1,0 +1,14 @@
+{
+  "name": "design-hours-tracker-netlify",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "mkdir -p vendor && cp node_modules/xlsx/dist/xlsx.full.min.js vendor/xlsx.full.min.js"
+  },
+  "dependencies": {
+    "@netlify/blobs": "latest",
+    "@netlify/functions": "latest",
+    "xlsx": "^0.18.5"
+  }
+}
