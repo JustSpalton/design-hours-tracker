@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Design Hours Tracker</title>
+<script src="/vendor/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<header>
+  <div class="brand"><div class="donaldson-wordmark"><span class="donaldson-d">D</span><span>DONALDSON</span></div><h1>Design Hours Tracker</h1></div>
+  <div class="actions">
+    <span class="lock" id="editState">View only</span>
+    <button class="secondary" id="unlockBtn">Unlock editing</button>
+    <button class="secondary" id="refreshBtn">Refresh</button>
+  </div>
+</header>
+<main>
+  <div class="status" id="status"></div>
+  <div class="toolbar">
+    <div class="panel weekbox">
+      <label for="weekSelect">Week commencing</label>
+      <select id="weekSelect"></select>
+      <div class="live"><span class="dot"></span><span id="syncText">Shared tracker</span></div>
+    </div>
+    <div class="drop" id="dropZone">
+      <div><strong>Drop weekly estimator Excel here</strong></div>
+      <label class="button primary edit-control" for="importFiles">Choose files</label><input id="importFiles" type="file" accept=".xls,.xlsx,.xlsm,.xlsb" multiple />
+    </div>
+  </div>
+  <div class="stats">
+    <div class="panel stat"><div class="label">Team design hours</div><div class="value" id="teamTotal">0.0</div><div class="sub" id="teamTotalSub">—</div></div>
+    <div class="panel stat"><div class="label">Designers with hours</div><div class="value" id="withHours">0</div><div class="sub" id="withHoursSub">—</div></div>
+    <div class="panel stat"><div class="label">Adjusted average per designer</div><div class="value" id="averageHours">0.0</div><div class="sub" id="averageHoursSub">holiday-adjusted to a 5-day week</div></div>
+  </div>
+  <div class="grid">
+    <aside class="panel sidebar">
+      <div class="searchrow"><input id="designerSearch" type="text" placeholder="Search designers" /><button class="secondary plus edit-control" id="addDesignerBtn" title="Add designer">+</button></div>
+      <div class="designer-list" id="designerList"></div>
+    </aside>
+    <section class="panel detail" id="detailPanel"><div class="empty-state">Loading tracker…</div></section>
+  </div>
+  <div class="panel" style="margin-top:14px">
+    <div class="section-head"><h3>Import log</h3><span style="font-size:12px;color:var(--muted)">Saved centrally for everyone</span></div>
+    <div class="section-body" id="importLog"></div>
+  </div>
+</main>
+<div class="toast" id="toast"></div>
+<script src="/app.js"></script>
+</body>
+</html>
