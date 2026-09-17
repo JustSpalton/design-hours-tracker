@@ -1,0 +1,130 @@
+import type { Context, Config } from "@netlify/functions";
+import { getStore, getDeployStore } from "@netlify/blobs";
+import { seedState } from "./_shared/seed";
+
+type Designer = { id: number; name: string; tracker_code?: string | null };
+type Hour = { designer: string; week: string; hours: number; source_file: string; imported_at: string };
+type Holiday = { designer: string; date: string };
+type ImportLog = { id: number; week: string; source_file: string; imported_at: string; rows_imported: number };
+type State = { designers: Designer[]; hours: Hour[]; holidays: Holiday[]; holidayReady: boolean; importLog: ImportLog[] };
+
+function storeFor(_context: Context) {
+  const deployContext = (globalThis as any).Netlify?.context?.deploy?.context;
+  return deployContext === "production"
+    ? getStore("design-hours-tracker", { consistency: "strong" })
+    : getDeployStore("design-hours-tracker");
+}
+
+function cloneSeed(): State { return JSON.parse(JSON.stringify(seedState)) as State; }
+
+async function getState(context: Context): Promise<State> {
+  const store = storeFor(context);
+  const existing = await store.get("state", { type: "json" }) as State | null;
+  if (existing) return { ...existing, holidays: existing.holidays || [], holidayReady: true, importLog: existing.importLog || [] };
+  const initial = cloneSeed();
+  await store.setJSON("state", initial);
+  return initial;
+}
+
+async function saveState(context: Context, state: State) {
+  await storeFor(context).setJSON("state", state);
+}
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
+}
+
+function editorOK(req: Request) {
+  const expected = Netlify.env.get("EDITOR_KEY");
+  if (!expected) return { ok: false, status: 503, error: "Editor PIN is not configured." };
+  const supplied = req.headers.get("x-editor-key") || "";
+  if (supplied !== expected) return { ok: false, status: 401, error: "Editor PIN is incorrect." };
+  return { ok: true, status: 200, error: "" };
+}
+
+function cleanName(value: unknown) { return String(value || "").replace(/\s+/g, " ").trim(); }
+function validDate(value: string) { return /^\d{4}-\d{2}-\d{2}$/.test(value); }
+
+export default async (req: Request, context: Context) => {
+  try {
+    const path = new URL(req.url).pathname;
+
+    if (path === "/api/data" && req.method === "GET") {
+      return json(await getState(context));
+    }
+
+    if (path === "/api/health" && req.method === "GET") {
+      const state = await getState(context);
+      return json({ ok: true, storage: "netlify-blobs", designers: state.designers.length, hours: state.hours.length });
+    }
+
+    if (path === "/api/auth" && req.method === "POST") {
+      const auth = editorOK(req);
+      return auth.ok ? json({ ok: true }) : json({ error: auth.error }, auth.status);
+    }
+
+    if (!["/api/designers", "/api/import", "/api/holidays"].includes(path)) return json({ error: "Not found" }, 404);
+    if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+    const auth = editorOK(req);
+    if (!auth.ok) return json({ error: auth.error }, auth.status);
+
+    const body = await req.json().catch(() => ({})) as any;
+    const state = await getState(context);
+
+    if (path === "/api/designers") {
+      const name = cleanName(body.name);
+      if (name.length < 3 || name.length > 80) return json({ error: "Enter a valid designer name." }, 400);
+      const existing = state.designers.find(d => d.name.toLowerCase() === name.toLowerCase());
+      if (!existing) state.designers.push({ id: Math.max(0, ...state.designers.map(d => d.id || 0)) + 1, name, tracker_code: null });
+      state.designers.sort((a,b) => a.name.localeCompare(b.name));
+      await saveState(context, state);
+      return json({ designer: existing || state.designers.find(d => d.name.toLowerCase() === name.toLowerCase()) });
+    }
+
+    if (path === "/api/holidays") {
+      const designer = cleanName(body.designer);
+      const date = String(body.date || "");
+      const holiday = !!body.holiday;
+      if (!state.designers.some(d => d.name.toLowerCase() === designer.toLowerCase())) return json({ error: "Designer not found." }, 404);
+      if (!validDate(date)) return json({ error: "Invalid holiday date." }, 400);
+      state.holidays = state.holidays.filter(h => !(h.designer.toLowerCase() === designer.toLowerCase() && h.date === date));
+      if (holiday) state.holidays.push({ designer: state.designers.find(d => d.name.toLowerCase() === designer.toLowerCase())!.name, date });
+      state.holidays.sort((a,b) => a.date.localeCompare(b.date) || a.designer.localeCompare(b.designer));
+      await saveState(context, state);
+      return json({ ok: true, holiday });
+    }
+
+    const week = String(body.week || "");
+    const sourceFile = String(body.sourceFile || "Excel import").slice(0,255);
+    const records = Array.isArray(body.records) ? body.records.slice(0,100) : [];
+    if (!validDate(week)) return json({ error: "Invalid week commencing date." }, 400);
+    if (new Date(`${week}T12:00:00Z`).getUTCDay() !== 1) return json({ error: "Week commencing date must be a Monday." }, 400);
+    if (!records.length) return json({ error: "No designer totals were supplied." }, 400);
+
+    const byName = new Map(state.designers.map(d => [d.name.toLowerCase(), d]));
+    const imported: {name:string;hours:number}[] = [], skipped: string[] = [];
+    const now = new Date().toISOString();
+    for (const r of records) {
+      const name = cleanName(r?.name), hours = Number(r?.hours);
+      if (!name || !Number.isFinite(hours) || hours < 0 || hours > 1000) continue;
+      const designer = byName.get(name.toLowerCase());
+      if (!designer) { skipped.push(name); continue; }
+      state.hours = state.hours.filter(h => !(h.designer.toLowerCase() === designer.name.toLowerCase() && h.week === week));
+      state.hours.push({ designer: designer.name, week, hours, source_file: sourceFile, imported_at: now });
+      imported.push({ name: designer.name, hours });
+    }
+    state.hours.sort((a,b) => a.week.localeCompare(b.week) || a.designer.localeCompare(b.designer));
+    const nextId = Math.max(0, ...state.importLog.map(x => x.id || 0)) + 1;
+    state.importLog.unshift({ id: nextId, week, source_file: sourceFile, imported_at: now, rows_imported: imported.length });
+    state.importLog = state.importLog.slice(0,50);
+    await saveState(context, state);
+    return json({ imported, skipped });
+  } catch (error: any) {
+    console.error(error);
+    return json({ error: error?.message || "Unexpected server error." }, 500);
+  }
+};
+
+export const config: Config = {
+  path: ["/api/data", "/api/health", "/api/auth", "/api/designers", "/api/import", "/api/holidays"]
+};
