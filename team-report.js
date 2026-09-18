@@ -17,6 +17,10 @@ function orderedProducts(totals){
   const rest=Object.keys(totals).filter(x=>!preferred.includes(x)).sort((a,b)=>(totals[b]||0)-(totals[a]||0)||a.localeCompare(b));
   return [...preferred,...rest].filter((x,i,a)=>a.indexOf(x)===i);
 }
+function breakdownHoursAvailable(field,weeks=currentViewWeeks()){
+  const wanted=new Set(weeks);
+  return (breakdownState.records||[]).some(rec=>wanted.has(rec.week)&&Object.prototype.hasOwnProperty.call(rec,field));
+}
 function installProductTotals(){
   if(document.getElementById('productTotalsPanel'))return;
   const stats=document.querySelector('.stats');if(!stats)return;
@@ -26,9 +30,9 @@ function installProductTotals(){
 function renderProductTotals(){
   installProductTotals();
   const panel=document.getElementById('productTotalsPanel');if(!panel)return;
-  const totals=allBreakdownTotals('products'),products=orderedProducts(totals);
-  const hasData=Object.values(totals).some(v=>Number(v)>0);
-  panel.innerHTML=`<div class="product-totals-head"><div><h3>Product totals — everyone</h3><span>${escapeHtml(typeof rangeLabel==='function'?rangeLabel():`W/C ${fmtDate(selectedWeek)}`)}</span></div></div><div class="product-total-grid">${hasData?products.map(p=>`<div class="product-total"><div class="product-total-label">${escapeHtml(p)}</div><div class="product-total-value">${Number(totals[p]||0)}</div><div class="product-total-sub">jobs</div></div>`).join(''):'<div class="breakdown-empty">No product breakdown data for this period yet.</div>'}</div>`;
+  const weeks=currentViewWeeks(),totals=allBreakdownTotals('products',weeks),hours=allBreakdownTotals('product_hours',weeks),products=orderedProducts(totals);
+  const hasData=Object.values(totals).some(v=>Number(v)>0),hasHours=breakdownHoursAvailable('product_hours',weeks);
+  panel.innerHTML=`<div class="product-totals-head"><div><h3>Product totals — everyone</h3><span>${escapeHtml(typeof rangeLabel==='function'?rangeLabel():`W/C ${fmtDate(selectedWeek)}`)}</span></div></div><div class="product-total-grid">${hasData?products.map(p=>`<div class="product-total"><div class="product-total-label">${escapeHtml(p)}</div><div class="product-total-value">${Number(totals[p]||0)}</div><div class="product-total-sub">jobs • ${hasHours?`${Number(hours[p]||0).toFixed(1)} design hours`:'hours not imported'}</div></div>`).join(''):'<div class="breakdown-empty">No product breakdown data for this period yet.</div>'}</div>`;
 }
 
 function teamForDesignerId(id){return (state.teams||[]).find(t=>(t.designer_ids||[]).includes(Number(id)))||null}
