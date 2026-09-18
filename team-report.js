@@ -130,19 +130,23 @@ function designerReportData(designer,weeks,bounds){
   const wanted=new Set(weeks);
   const hours=(state.hours||[]).filter(x=>norm(x.designer)===norm(designer.name)&&wanted.has(x.week)).reduce((s,x)=>s+Number(x.hours||0),0);
   const holidayDays=(state.holidays||[]).filter(x=>norm(x.designer)===norm(designer.name)&&x.date>=bounds.start&&x.date<=bounds.end).length;
-  const products={},statuses={};
+  const products={},statuses={},productHours={},statusHours={};let workMixHoursAvailable=false;
   for(const rec of breakdownState.records||[]){
     if(norm(rec.designer)!==norm(designer.name)||!wanted.has(rec.week))continue;
     for(const [k,v] of Object.entries(rec.products||{}))products[k]=(products[k]||0)+Number(v||0);
     for(const [k,v] of Object.entries(rec.statuses||{}))statuses[k]=(statuses[k]||0)+Number(v||0);
+    if(Object.prototype.hasOwnProperty.call(rec,'product_hours')||Object.prototype.hasOwnProperty.call(rec,'status_hours'))workMixHoursAvailable=true;
+    for(const [k,v] of Object.entries(rec.product_hours||{}))productHours[k]=(productHours[k]||0)+Number(v||0);
+    for(const [k,v] of Object.entries(rec.status_hours||{}))statusHours[k]=(statusHours[k]||0)+Number(v||0);
   }
-  return {hours,holidayDays,products,statuses};
+  return {hours,holidayDays,products,statuses,productHours,statusHours,workMixHoursAvailable};
 }
+function reportMixCell(count,hours,hasHours){return `${Number(count||0)}<span class="report-cell-hours">${hasHours?`${Number(hours||0).toFixed(1)}h`:'—'}</span>`}
 function reportTeamTable(title,designers,weeks,bounds){
   if(!designers.length)return '';
-  const rows=designers.map(d=>{const x=designerReportData(d,weeks,bounds);return `<tr><td><strong>${escapeHtml(d.name)}</strong></td><td class="right">${x.hours.toFixed(1)}</td><td class="right">${x.holidayDays}</td><td class="right">${Number(x.products['I Joist']||0)}</td><td class="right">${Number(x.products['Posi Joist']||0)}</td><td class="right">${Number(x.statuses['OTP']||0)}</td><td class="right">${Number(x.statuses['Amendment']||0)}</td><td class="right">${Number(x.statuses['Budget']||0)}</td></tr>`}).join('');
+  const rows=designers.map(d=>{const x=designerReportData(d,weeks,bounds);return `<tr><td><strong>${escapeHtml(d.name)}</strong></td><td class="right">${x.hours.toFixed(1)}</td><td class="right">${x.holidayDays}</td><td class="right">${reportMixCell(x.products['I Joist'],x.productHours['I Joist'],x.workMixHoursAvailable)}</td><td class="right">${reportMixCell(x.products['Posi Joist'],x.productHours['Posi Joist'],x.workMixHoursAvailable)}</td><td class="right">${reportMixCell(x.statuses['OTP'],x.statusHours['OTP'],x.workMixHoursAvailable)}</td><td class="right">${reportMixCell(x.statuses['Amendment'],x.statusHours['Amendment'],x.workMixHoursAvailable)}</td><td class="right">${reportMixCell(x.statuses['Budget'],x.statusHours['Budget'],x.workMixHoursAvailable)}</td></tr>`}).join('');
   const total=designers.reduce((s,d)=>s+designerReportData(d,weeks,bounds).hours,0);
-  return `<section class="report-team"><h3>${escapeHtml(title)}</h3><div class="report-table-wrap"><table><thead><tr><th>Designer</th><th class="right">Hours</th><th class="right">Holiday days</th><th class="right">I Joist</th><th class="right">Posi Joist</th><th class="right">OTP</th><th class="right">Amendment</th><th class="right">Budget</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td><strong>Team total</strong></td><td class="right"><strong>${total.toFixed(1)}</strong></td><td colspan="6"></td></tr></tfoot></table></div></section>`;
+  return `<section class="report-team"><h3>${escapeHtml(title)}</h3><div class="report-table-wrap"><table><thead><tr><th>Designer</th><th class="right">Total hrs</th><th class="right">Holiday</th><th class="right">I Joist<br><span>jobs / hrs</span></th><th class="right">Posi Joist<br><span>jobs / hrs</span></th><th class="right">OTP<br><span>jobs / hrs</span></th><th class="right">Amendment<br><span>jobs / hrs</span></th><th class="right">Budget<br><span>jobs / hrs</span></th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td><strong>Team total</strong></td><td class="right"><strong>${total.toFixed(1)}</strong></td><td colspan="6"></td></tr></tfoot></table></div></section>`;
 }
 function renderManagerReport(){
   const period=document.getElementById('reportPeriod')?.value;if(!period)return;
@@ -152,6 +156,8 @@ function renderManagerReport(){
   const activeDesigners=new Set(hoursRows.map(x=>norm(x.designer))).size;
   const holidayDays=(state.holidays||[]).filter(x=>x.date>=bounds.start&&x.date<=bounds.end).length;
   const products=totalsForBreakdownWeeks('products',weeks),statuses=totalsForBreakdownWeeks('statuses',weeks);
+  const productHours=totalsForBreakdownWeeks('product_hours',weeks),statusHours=totalsForBreakdownWeeks('status_hours',weeks);
+  const hasProductHours=breakdownHoursAvailable('product_hours',weeks),hasStatusHours=breakdownHoursAvailable('status_hours',weeks);
   const productNames=orderedProducts(products),statusNames=Object.keys(statuses).sort((a,b)=>(statuses[b]||0)-(statuses[a]||0)||a.localeCompare(b));
   const breakdownCoverage=new Set((breakdownState.records||[]).filter(x=>wanted.has(x.week)).map(x=>x.week)).size;
   const teams=state.teams||[],assigned=new Set(teams.flatMap(t=>t.designer_ids||[]));
@@ -165,8 +171,8 @@ function renderManagerReport(){
     <div><span>Holiday days</span><strong>${holidayDays}</strong></div>
     <div><span>Weeks included</span><strong>${weeks.length}</strong></div>
   </div>
-  <section class="report-block"><h3>Product totals — everyone</h3><div class="report-chips">${productNames.length?productNames.map(p=>`<div><span>${escapeHtml(p)}</span><strong>${Number(products[p]||0)}</strong></div>`).join(''):'<p>No product breakdown data imported for this period.</p>'}</div></section>
-  <section class="report-block"><h3>Job type totals — everyone</h3><div class="report-chips">${statusNames.length?statusNames.map(s=>`<div><span>${escapeHtml(s)}</span><strong>${Number(statuses[s]||0)}</strong></div>`).join(''):'<p>No job type breakdown data imported for this period.</p>'}</div></section>
+  <section class="report-block"><h3>Product totals — everyone</h3><div class="report-chips">${productNames.length?productNames.map(p=>`<div><span>${escapeHtml(p)}</span><strong>${Number(products[p]||0)} jobs</strong><em>${hasProductHours?`${Number(productHours[p]||0).toFixed(1)} design hours`:'hours not imported'}</em></div>`).join(''):'<p>No product breakdown data imported for this period.</p>'}</div></section>
+  <section class="report-block"><h3>Job type totals — everyone</h3><div class="report-chips">${statusNames.length?statusNames.map(s=>`<div><span>${escapeHtml(s)}</span><strong>${Number(statuses[s]||0)} jobs</strong><em>${hasStatusHours?`${Number(statusHours[s]||0).toFixed(1)} design hours`:'hours not imported'}</em></div>`).join(''):'<p>No job type breakdown data imported for this period.</p>'}</div></section>
   ${breakdownCoverage<weeks.length?`<div class="report-note">Product and job-type figures cover ${breakdownCoverage} of ${weeks.length} week${weeks.length===1?'':'s'} in this report. Re-import older estimator spreadsheets to fill any missing breakdown history.</div>`:''}
   <div class="report-team-sections">${teamSections}${reportTeamTable('Unassigned',unassigned,weeks,bounds)}</div>`;
 }
