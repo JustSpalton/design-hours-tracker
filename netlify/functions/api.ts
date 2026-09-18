@@ -17,10 +17,41 @@ function storeFor(_context: Context) {
 
 function cloneSeed(): State { return JSON.parse(JSON.stringify(seedState)) as State; }
 
+function migrateCanonicalNames(state: State) {
+  let changed = false;
+  const oldName = "Jon Wilson";
+  const newName = "Jonathan Wilson";
+  const oldDesigner = state.designers.find(d => d.name.toLowerCase() === oldName.toLowerCase());
+  const newDesigner = state.designers.find(d => d.name.toLowerCase() === newName.toLowerCase());
+
+  if (oldDesigner) {
+    if (newDesigner && newDesigner !== oldDesigner) {
+      if (!newDesigner.tracker_code && oldDesigner.tracker_code) newDesigner.tracker_code = oldDesigner.tracker_code;
+      state.designers = state.designers.filter(d => d !== oldDesigner);
+    } else {
+      oldDesigner.name = newName;
+    }
+    changed = true;
+  }
+
+  for (const row of state.hours) {
+    if (row.designer.toLowerCase() === oldName.toLowerCase()) { row.designer = newName; changed = true; }
+  }
+  for (const row of state.holidays || []) {
+    if (row.designer.toLowerCase() === oldName.toLowerCase()) { row.designer = newName; changed = true; }
+  }
+  state.designers.sort((a,b) => a.name.localeCompare(b.name));
+  return changed;
+}
+
 async function getState(context: Context): Promise<State> {
   const store = storeFor(context);
   const existing = await store.get("state", { type: "json" }) as State | null;
-  if (existing) return { ...existing, holidays: existing.holidays || [], holidayReady: true, importLog: existing.importLog || [] };
+  if (existing) {
+    const state = { ...existing, holidays: existing.holidays || [], holidayReady: true, importLog: existing.importLog || [] };
+    if (migrateCanonicalNames(state)) await store.setJSON("state", state);
+    return state;
+  }
   const initial = cloneSeed();
   await store.setJSON("state", initial);
   return initial;
