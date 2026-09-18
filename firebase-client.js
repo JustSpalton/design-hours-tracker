@@ -24,6 +24,15 @@ window.firebaseReady = signInAnonymously(auth);
 const clone = value => JSON.parse(JSON.stringify(value));
 const cleanName = value => String(value || "").replace(/\s+/g, " ").trim();
 const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+const defaultTeams = () => [
+  { id: "my-team", name: "My Team", designer_ids: [] },
+  { id: "lynseys-team", name: "Lynsey's Team", designer_ids: [] },
+  { id: "abbies-team", name: "Abbie's Team", designer_ids: [] }
+];
+const ensureTeams = state => {
+  if (!Array.isArray(state.teams) || !state.teams.length) state.teams = defaultTeams();
+  return state.teams;
+};
 
 function parseBody(options) {
   if (!options?.body) return {};
@@ -54,6 +63,7 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
   if (path === "/api/data" && method === "GET") {
     const data = await readRequired(stateRef, "Tracker data");
     const result = clone(data);
+    ensureTeams(result);
     delete result.updatedAt;
     return result;
   }
@@ -86,6 +96,45 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
       transaction.set(stateRef, { ...state, updatedAt: serverTimestamp() });
     });
     return { designer: saved };
+  }
+
+  if (path === "/api/teams" && method === "POST") {
+    let teams;
+    await runTransaction(db, async transaction => {
+      const snapshot = await transaction.get(stateRef);
+      if (!snapshot.exists()) throw new Error("Tracker data has not been migrated yet.");
+      const state = clone(snapshot.data());
+      ensureTeams(state);
+      const action = String(body.action || "");
+      const teamId = String(body.teamId || "");
+      const team = state.teams.find(item => item.id === teamId);
+      if (action === "add") {
+        const name = cleanName(body.name);
+        if (name.length < 2 || name.length > 60) throw new Error("Enter a valid team name.");
+        state.teams.push({ id: "team-" + crypto.randomUUID(), name, designer_ids: [] });
+      } else if (action === "rename") {
+        if (!team) throw new Error("Team not found.");
+        const name = cleanName(body.name);
+        if (name.length < 2 || name.length > 60) throw new Error("Enter a valid team name.");
+        team.name = name;
+      } else if (action === "move") {
+        const designerId = Number(body.designerId);
+        if (!state.designers.some(item => Number(item.id) === designerId)) throw new Error("Designer not found.");
+        for (const item of state.teams) item.designer_ids = (item.designer_ids || []).filter(id => Number(id) !== designerId);
+        if (teamId) {
+          if (!team) throw new Error("Team not found.");
+          team.designer_ids.push(designerId);
+        }
+      } else if (action === "delete") {
+        if (!team) throw new Error("Team not found.");
+        state.teams = state.teams.filter(item => item.id !== teamId);
+      } else {
+        throw new Error("Unknown team action.");
+      }
+      teams = clone(state.teams);
+      transaction.set(stateRef, { ...state, updatedAt: serverTimestamp() });
+    });
+    return { ok: true, teams };
   }
 
   if (path === "/api/holidays" && method === "POST") {
