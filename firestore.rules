@@ -1,0 +1,39 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    match /tracker/state {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'designers', 'hours', 'holidays', 'holidayReady', 'importLog', 'updatedAt'
+        ])
+        && request.resource.data.designers is list
+        && request.resource.data.designers.size() <= 100
+        && request.resource.data.hours is list
+        && request.resource.data.hours.size() <= 5000
+        && request.resource.data.holidays is list
+        && request.resource.data.holidays.size() <= 2000
+        && request.resource.data.importLog is list
+        && request.resource.data.importLog.size() <= 100;
+      allow delete: if false;
+    }
+
+    match /tracker/breakdowns {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasOnly(['records', 'updatedAt'])
+        && request.resource.data.records is list
+        && request.resource.data.records.size() <= 5000;
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

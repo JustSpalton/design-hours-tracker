@@ -1,0 +1,24 @@
+name: Firebase migration check
+
+on:
+  push:
+    branches: [firebase-migration]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run build
+      - run: node --check app.js
+      - run: node --check breakdown.js
+      - run: node --check range.js
+      - run: node --check firebase-client.js

@@ -38,12 +38,12 @@ function extractBreakdowns(wb,week,sourceFile){
   }
   return [...combined.values()];
 }
-async function loadBreakdowns(){try{const res=await fetch('/api/breakdowns',{cache:'no-store'});if(res.ok)breakdownState=await res.json()}catch(_){breakdownState={records:[]}}}
+async function loadBreakdowns(){try{breakdownState=await api('/api/breakdowns')}catch(_){breakdownState={records:[]}}}
 async function saveBreakdownsFromFiles(files){
   const excel=[...files].filter(isExcelFile);if(!excel.length)return;const records=[];
   for(const file of excel){try{const d=parseWeekFilename(file.name);if(!d)continue;const week=isoDate(d);const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true});records.push(...extractBreakdowns(wb,week,file.name))}catch(e){console.warn('Breakdown import skipped',file.name,e)}}
   if(!records.length)return;
-  try{const res=await fetch('/api/breakdowns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({records})});if(res.ok){breakdownState=await res.json();renderDetail()}}catch(e){console.warn('Breakdown save failed',e)}
+  try{breakdownState=await api('/api/breakdowns',{method:'POST',body:JSON.stringify({records})});renderDetail()}catch(e){console.warn('Breakdown save failed',e)}
 }
 function breakdownWeeks(){return typeof rangeWeeks==='function'?rangeWeeks():(selectedWeek?[selectedWeek]:[])}
 function breakdownTotals(designer,field){
