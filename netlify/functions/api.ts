@@ -75,8 +75,9 @@ async function getState(context: Context): Promise<State> {
   const existing = await store.get("state", { type: "json" }) as State | null;
   if (existing) {
     const state = { ...existing, holidays: existing.holidays || [], holidayReady: true, importLog: existing.importLog || [], teams: existing.teams || [] } as State;
-    const changed = migrateCanonicalNames(state) || ensureTeams(state);
-    if (changed) await store.setJSON("state", state);
+    const canonicalChanged = migrateCanonicalNames(state);
+    const teamsChanged = ensureTeams(state);
+    if (canonicalChanged || teamsChanged) await store.setJSON("state", state);
     return state;
   }
   const initial = cloneSeed();
