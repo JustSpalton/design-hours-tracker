@@ -2,7 +2,7 @@ import type { Config } from "@netlify/functions";
 import { getStore, getDeployStore } from "@netlify/blobs";
 
 type Counts = Record<string, number>;
-type BreakdownRecord = { designer: string; week: string; products: Counts; statuses: Counts; source_file?: string; imported_at?: string };
+type BreakdownRecord = { designer: string; week: string; products: Counts; statuses: Counts; product_hours?: Counts; status_hours?: Counts; source_file?: string; imported_at?: string };
 type BreakdownState = { records: BreakdownRecord[] };
 
 function json(data: unknown, status = 200) {
@@ -16,6 +16,15 @@ function cleanCounts(value: unknown): Counts {
   for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
     const label = clean(key); const count = Number(raw);
     if (label && Number.isFinite(count) && count >= 0) out[label] = Math.round(count);
+  }
+  return out;
+}
+function cleanHours(value: unknown): Counts {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Counts = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    const label = clean(key); const hours = Number(raw);
+    if (label && Number.isFinite(hours) && hours >= 0) out[label] = Math.round(hours * 100) / 100;
   }
   return out;
 }
@@ -47,7 +56,16 @@ export default async (req: Request) => {
   for (const raw of body.records as any[]) {
     const designer = clean(raw?.designer), week = clean(raw?.week);
     if (!designer || !validWeek(week)) continue;
-    incoming.push({ designer, week, products: cleanCounts(raw?.products), statuses: cleanCounts(raw?.statuses), source_file: clean(raw?.source_file), imported_at: new Date().toISOString() });
+    incoming.push({
+      designer,
+      week,
+      products: cleanCounts(raw?.products),
+      statuses: cleanCounts(raw?.statuses),
+      product_hours: cleanHours(raw?.product_hours),
+      status_hours: cleanHours(raw?.status_hours),
+      source_file: clean(raw?.source_file),
+      imported_at: new Date().toISOString()
+    });
   }
   const state = await readState();
   for (const record of incoming) {

@@ -6,7 +6,8 @@ type Designer = { id: number; name: string; tracker_code?: string | null };
 type Hour = { designer: string; week: string; hours: number; source_file: string; imported_at: string };
 type Holiday = { designer: string; date: string };
 type ImportLog = { id: number; week: string; source_file: string; imported_at: string; rows_imported: number };
-type State = { designers: Designer[]; hours: Hour[]; holidays: Holiday[]; holidayReady: boolean; importLog: ImportLog[] };
+type Team = { id: string; name: string; designer_ids: number[] };
+type State = { designers: Designer[]; hours: Hour[]; holidays: Holiday[]; holidayReady: boolean; importLog: ImportLog[]; teams: Team[] };
 
 function storeFor(_context: Context) {
   const deployContext = (globalThis as any).Netlify?.context?.deploy?.context;
@@ -15,7 +16,32 @@ function storeFor(_context: Context) {
     : getDeployStore("design-hours-tracker");
 }
 
-function cloneSeed(): State { return JSON.parse(JSON.stringify(seedState)) as State; }
+function defaultTeams(): Team[] {
+  return [
+    { id: "my-team", name: "My Team", designer_ids: [] },
+    { id: "lynseys-team", name: "Lynsey's Team", designer_ids: [] },
+    { id: "abbies-team", name: "Abbie's Team", designer_ids: [] }
+  ];
+}
+function cloneSeed(): State {
+  const state = JSON.parse(JSON.stringify(seedState)) as State;
+  state.teams = defaultTeams();
+  return state;
+}
+function ensureTeams(state: State) {
+  if (!Array.isArray(state.teams) || !state.teams.length) {
+    state.teams = defaultTeams();
+    return true;
+  }
+  let changed = false;
+  const validIds = new Set(state.designers.map(d => d.id));
+  for (const team of state.teams) {
+    const cleanIds = [...new Set((team.designer_ids || []).map(Number).filter(id => validIds.has(id)))];
+    if (cleanIds.length !== (team.designer_ids || []).length) changed = true;
+    team.designer_ids = cleanIds;
+  }
+  return changed;
+}
 
 function migrateCanonicalNames(state: State) {
   let changed = false;
@@ -48,8 +74,10 @@ async function getState(context: Context): Promise<State> {
   const store = storeFor(context);
   const existing = await store.get("state", { type: "json" }) as State | null;
   if (existing) {
-    const state = { ...existing, holidays: existing.holidays || [], holidayReady: true, importLog: existing.importLog || [] };
-    if (migrateCanonicalNames(state)) await store.setJSON("state", state);
+    const state = { ...existing, holidays: existing.holidays || [], holidayReady: true, importLog: existing.importLog || [], teams: existing.teams || [] } as State;
+    const canonicalChanged = migrateCanonicalNames(state);
+    const teamsChanged = ensureTeams(state);
+    if (canonicalChanged || teamsChanged) await store.setJSON("state", state);
     return state;
   }
   const initial = cloneSeed();
@@ -85,7 +113,7 @@ export default async (req: Request, context: Context) => {
       return json({ ok: true });
     }
 
-    if (!["/api/designers", "/api/import", "/api/holidays"].includes(path)) return json({ error: "Not found" }, 404);
+    if (!["/api/designers", "/api/import", "/api/holidays", "/api/teams"].includes(path)) return json({ error: "Not found" }, 404);
     if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
     const body = await req.json().catch(() => ({})) as any;
@@ -99,6 +127,46 @@ export default async (req: Request, context: Context) => {
       state.designers.sort((a,b) => a.name.localeCompare(b.name));
       await saveState(context, state);
       return json({ designer: existing || state.designers.find(d => d.name.toLowerCase() === name.toLowerCase()) });
+    }
+
+    if (path === "/api/teams") {
+      const action = String(body.action || "");
+      if (action === "add") {
+        const name = cleanName(body.name);
+        if (name.length < 2 || name.length > 60) return json({ error: "Enter a valid team name." }, 400);
+        const id = `team-${crypto.randomUUID()}`;
+        state.teams.push({ id, name, designer_ids: [] });
+        await saveState(context, state);
+        return json({ ok: true, teams: state.teams });
+      }
+      const teamId = String(body.teamId || "");
+      const team = state.teams.find(t => t.id === teamId);
+      if (action === "rename") {
+        if (!team) return json({ error: "Team not found." }, 404);
+        const name = cleanName(body.name);
+        if (name.length < 2 || name.length > 60) return json({ error: "Enter a valid team name." }, 400);
+        team.name = name;
+        await saveState(context, state);
+        return json({ ok: true, teams: state.teams });
+      }
+      if (action === "move") {
+        const designerId = Number(body.designerId);
+        if (!state.designers.some(d => d.id === designerId)) return json({ error: "Designer not found." }, 404);
+        for (const t of state.teams) t.designer_ids = (t.designer_ids || []).filter(id => id !== designerId);
+        if (teamId) {
+          if (!team) return json({ error: "Team not found." }, 404);
+          team.designer_ids.push(designerId);
+        }
+        await saveState(context, state);
+        return json({ ok: true, teams: state.teams });
+      }
+      if (action === "delete") {
+        if (!team) return json({ error: "Team not found." }, 404);
+        state.teams = state.teams.filter(t => t.id !== teamId);
+        await saveState(context, state);
+        return json({ ok: true, teams: state.teams });
+      }
+      return json({ error: "Unknown team action." }, 400);
     }
 
     if (path === "/api/holidays") {
@@ -146,5 +214,5 @@ export default async (req: Request, context: Context) => {
 };
 
 export const config: Config = {
-  path: ["/api/data", "/api/health", "/api/auth", "/api/designers", "/api/import", "/api/holidays"]
+  path: ["/api/data", "/api/health", "/api/auth", "/api/designers", "/api/import", "/api/holidays", "/api/teams"]
 };
