@@ -51,11 +51,12 @@
 .report-chips>div{padding:11px 12px;border-right:1px solid var(--line)}
 .report-chips span{display:block;font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:800}
 .report-chips strong{display:block;font-size:22px;margin-top:2px}
+.report-chips em{display:block;font-style:normal;font-size:11px;color:var(--muted);margin-top:2px}
 .report-chips p{padding:0 12px;color:var(--muted);font-size:12px}
 .report-note{padding:10px 12px;margin-bottom:14px;border:1px solid #e7c36c;background:#fff9e9;border-radius:7px;font-size:11px;color:#76520a}
 .report-table-wrap{overflow:auto}
 .report-team table{margin:0}
-.report-team tfoot td{background:#fafafa;border-top:1.5px solid var(--red)}
+.report-team th span{font-size:9px;text-transform:none;letter-spacing:0;color:#888}.report-cell-hours{display:block;font-size:10px;color:var(--muted);font-weight:700;margin-top:2px}.report-team tfoot td{background:#fafafa;border-top:1.5px solid var(--red)}
 body.report-open{overflow:hidden}
 
 @media(max-width:900px){
