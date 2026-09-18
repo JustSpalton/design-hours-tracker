@@ -24,8 +24,18 @@ function storeForContext() {
   return production ? getStore("design-hours-breakdowns", { consistency: "strong" }) : getDeployStore("design-hours-breakdowns", { consistency: "strong" });
 }
 async function readState(): Promise<BreakdownState> {
-  const stored = await storeForContext().get("state-v1", { type: "json" }) as BreakdownState | null;
-  return { records: Array.isArray(stored?.records) ? stored.records : [] };
+  const store = storeForContext();
+  const stored = await store.get("state-v1", { type: "json" }) as BreakdownState | null;
+  const records = Array.isArray(stored?.records) ? stored.records : [];
+  let changed = false;
+  for (const record of records) {
+    if (record.designer.toLowerCase() === "jon wilson") {
+      record.designer = "Jonathan Wilson";
+      changed = true;
+    }
+  }
+  if (changed) await store.setJSON("state-v1", { records });
+  return { records };
 }
 
 export default async (req: Request) => {
