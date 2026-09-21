@@ -68,6 +68,17 @@ function cleanCounts(value) {
   return result;
 }
 
+function cleanHours(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const result = {};
+  for (const [key, raw] of Object.entries(value)) {
+    const label = cleanName(key);
+    const hours = Number(raw);
+    if (label && Number.isFinite(hours) && hours >= 0) result[label] = Math.round(hours * 100) / 100;
+  }
+  return result;
+}
+
 async function readRequired(ref, label) {
   const snapshot = await getDoc(ref);
   if (!snapshot.exists()) throw new Error(`${label} has not been migrated to Firebase yet.`);
@@ -176,6 +187,54 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
     return { ok: true, holiday };
   }
 
+  if (path === "/api/import-batch" && method === "POST") {
+    const sourceFile = String(body.sourceFile || "Excel import").slice(0, 255);
+    const weeks = Array.isArray(body.weeks) ? body.weeks.slice(0, 60) : [];
+    if (!weeks.length) throw new Error("No weekly data was supplied.");
+    let response;
+    await runTransaction(db, async transaction => {
+      const snapshot = await transaction.get(stateRef);
+      if (!snapshot.exists()) throw new Error("Tracker data has not been migrated yet.");
+      const state = canonicalizeStateNames(clone(snapshot.data()));
+      const byName = new Map(state.designers.map(item => [item.name.toLowerCase(), item]));
+      const imported = [], skipped = [], logs = [];
+      const now = new Date().toISOString();
+      for (const group of weeks) {
+        const week = String(group?.week || "");
+        const rows = Array.isArray(group?.records) ? group.records.slice(0, 100) : [];
+        if (!validDate(week) || new Date(`${week}T12:00:00Z`).getUTCDay() !== 1 || !rows.length) continue;
+        let rowsImported = 0;
+        for (const row of rows) {
+          const name = canonicalDesignerName(row?.name);
+          const hours = Number(row?.hours);
+          if (!name || !Number.isFinite(hours) || hours < 0 || hours > 1000) continue;
+          const designer = byName.get(name.toLowerCase());
+          if (!designer) { skipped.push(name); continue; }
+          state.hours = state.hours.filter(item =>
+            !(item.designer.toLowerCase() === designer.name.toLowerCase() && item.week === week)
+          );
+          state.hours.push({ designer: designer.name, week, hours, source_file: sourceFile, imported_at: now });
+          imported.push({ week, name: designer.name, hours });
+          rowsImported++;
+        }
+        logs.push({ week, rows_imported: rowsImported });
+      }
+      state.hours.sort((a, b) => a.week.localeCompare(b.week) || a.designer.localeCompare(b.designer));
+      let nextId = Math.max(0, ...(state.importLog || []).map(item => Number(item.id) || 0)) + 1;
+      const newLogs = logs.slice().reverse().map(item => ({
+        id: nextId++,
+        week: item.week,
+        source_file: sourceFile,
+        imported_at: now,
+        rows_imported: item.rows_imported
+      }));
+      state.importLog = [...newLogs, ...(state.importLog || [])].slice(0, 50);
+      transaction.set(stateRef, { ...state, updatedAt: serverTimestamp() });
+      response = { imported, skipped, weeks: logs.length };
+    });
+    return response;
+  }
+
   if (path === "/api/import" && method === "POST") {
     const week = String(body.week || "");
     const sourceFile = String(body.sourceFile || "Excel import").slice(0, 255);
@@ -242,6 +301,8 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
           week,
           products: cleanCounts(raw?.products),
           statuses: cleanCounts(raw?.statuses),
+          product_hours: cleanHours(raw?.product_hours),
+          status_hours: cleanHours(raw?.status_hours),
           source_file: cleanName(raw?.source_file),
           imported_at: new Date().toISOString()
         };
