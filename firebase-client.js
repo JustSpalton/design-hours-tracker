@@ -8,7 +8,10 @@ import {
   serverTimestamp,
   setDoc,
   deleteDoc,
-  Timestamp
+  Timestamp,
+  collection,
+  getDocs,
+  writeBatch
 } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
 
 const config = window.DESIGN_HOURS_FIREBASE_CONFIG;
@@ -21,6 +24,7 @@ const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
 const stateRef = doc(db, "tracker", "state");
 const breakdownRef = doc(db, "tracker", "breakdowns");
+const ncrChunksRef = collection(db, "ncrChunks");
 
 window.firebaseReady = (async () => {
   await setPersistence(auth, browserSessionPersistence);
@@ -87,6 +91,42 @@ function cleanHours(value) {
   return result;
 }
 
+function cleanNcrText(value, max = 2000) {
+  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+}
+function cleanNcrNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+}
+function cleanNcrRecord(raw) {
+  return {
+    rowId: cleanNcrText(raw?.rowId, 80),
+    ncrNo: cleanNcrText(raw?.ncrNo, 40),
+    dateReported: validDate(raw?.dateReported) ? String(raw.dateReported) : "",
+    ifo: cleanNcrText(raw?.ifo, 120),
+    invoiceMonth: cleanNcrText(raw?.invoiceMonth, 40),
+    customer: cleanNcrText(raw?.customer, 180),
+    fnumber: cleanNcrText(raw?.fnumber, 80),
+    site: cleanNcrText(raw?.site, 300),
+    complaint: cleanNcrText(raw?.complaint, 2400),
+    employee: cleanNcrText(raw?.employee, 60),
+    approvedBy: cleanNcrText(raw?.approvedBy, 60),
+    category: cleanNcrText(raw?.category, 100),
+    beams: cleanNcrNumber(raw?.beams),
+    posi: cleanNcrNumber(raw?.posi),
+    ancillaries: cleanNcrNumber(raw?.ancillaries),
+    delivery: cleanNcrNumber(raw?.delivery),
+    total: cleanNcrNumber(raw?.total),
+    correctiveAction: cleanNcrText(raw?.correctiveAction, 2400),
+    investigated: cleanNcrText(raw?.investigated, 300),
+    finding: cleanNcrText(raw?.finding, 300),
+    productionComments: cleanNcrText(raw?.productionComments, 2400),
+    details: cleanNcrText(raw?.details, 300),
+    collectReplace: cleanNcrText(raw?.collectReplace, 300),
+    notes: cleanNcrText(raw?.notes, 3000)
+  };
+}
+
 async function readRequired(ref, label) {
   const snapshot = await getDoc(ref);
   if (!snapshot.exists()) throw new Error(`${label} has not been migrated to Firebase yet.`);
@@ -103,7 +143,37 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
   }
 
   if (path === "/api/unlock" && method === "POST") {
+    if (path === "/api/ncr" && method === "GET") {
+    const snapshot = await getDocs(ncrChunksRef);
+    const chunks = snapshot.docs.map(item => item.data()).sort((a, b) => Number(a.index || 0) - Number(b.index || 0));
+    const records = chunks.flatMap(item => Array.isArray(item.records) ? item.records : []);
+    const latest = chunks.find(item => item.sourceFile || item.importedAt) || {};
+    return { records, sourceFile: latest.sourceFile || "", importedAt: latest.importedAt || null };
+  }
+
     const body = parseBody(options);
+
+  if (path === "/api/ncr-import" && method === "POST") {
+    const incoming = Array.isArray(body.records) ? body.records.slice(0, 6000) : [];
+    if (!incoming.length) throw new Error("No NCR records were supplied.");
+    const records = incoming.map(cleanNcrRecord).filter(row => row.ncrNo);
+    if (!records.length) throw new Error("No valid NCR rows were found.");
+    const sourceFile = cleanNcrText(body.sourceFile || "NCR Excel import", 255);
+    const importedAt = new Date().toISOString();
+    const chunkSize = 150;
+    const chunks = [];
+    for (let i = 0; i < records.length; i += chunkSize) chunks.push(records.slice(i, i + chunkSize));
+
+    const existing = await getDocs(ncrChunksRef);
+    const batch = writeBatch(db);
+    for (const item of existing.docs) batch.delete(item.ref);
+    chunks.forEach((rows, index) => {
+      const ref = doc(db, "ncrChunks", `chunk-${String(index).padStart(3, "0")}`);
+      batch.set(ref, { index, sourceFile, importedAt, records: rows });
+    });
+    await batch.commit();
+    return { ok: true, saved: records.length, chunks: chunks.length, sourceFile, importedAt, records };
+  }
     const pin = String(body.pin || "").trim();
     if (!/^\d{4}$/.test(pin)) throw new Error("Enter a 4-digit PIN.");
     const user = auth.currentUser;
