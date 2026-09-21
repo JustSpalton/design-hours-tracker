@@ -10,19 +10,42 @@ function resolveBreakdownDesigner(imported){
   const ini=breakdownInitials(imported);const matches=state.designers.filter(d=>breakdownInitials(d.name)===ini);
   return matches.length===1?matches[0].name:null;
 }
-function normalProduct(value){const v=String(value||'').replace(/\s+/g,' ').trim();if(!v)return '';if(/^posi\s*[- ]?\s*joist$/i.test(v))return 'Posi Joist';if(/^i\s*[- ]?\s*joist$/i.test(v))return 'I Joist';return v}
-function normalStatus(value){const v=String(value||'').replace(/\s+/g,' ').trim();if(!v)return '';if(/^budget(?:\s+quote)?$/i.test(v))return 'Budget';if(/^otp$/i.test(v))return 'OTP';if(/^amendment$/i.test(v))return 'Amendment';return v}
+function normalProduct(value){
+  const v=String(value||'').replace(/\s+/g,' ').trim();if(!v)return '';
+  if(/\bposi\s*[- ]?\s*joist\b/i.test(v)||/^posi$/i.test(v))return 'Posi Joist';
+  if(/\bi\s*[- ]?\s*joist\b/i.test(v)||/^ijoist$/i.test(v))return 'I Joist';
+  return '';
+}
+function normalStatus(value){
+  const v=String(value||'').replace(/\s+/g,' ').trim();if(!v)return '';
+  if(/\bbudget(?:\s+quote)?\b/i.test(v))return 'Budget';
+  if(/\botp\b/i.test(v))return 'OTP';
+  if(/\bamendment\b/i.test(v))return 'Amendment';
+  return '';
+}
 function addCount(obj,key){if(key)obj[key]=(obj[key]||0)+1}
 function addHours(obj,key,value){if(key&&Number.isFinite(value))obj[key]=Math.round(((obj[key]||0)+Number(value))*100)/100}
 function breakdownColumns(ws,range){
   let productCol=null,statusCol=null;
   const report=getReportColumns(ws,range);
-  for(let r=range.s.r;r<=Math.min(range.e.r,range.s.r+20);r++)for(let c=range.s.c;c<=range.e.c;c++){
-    const t=cellText(ws[XLSX.utils.encode_cell({r,c})]);
-    if(productCol==null&&/^product$/i.test(t))productCol=c;
-    if(statusCol==null&&/^status$/i.test(t))statusCol=c;
+  for(let r=range.s.r;r<=Math.min(range.e.r,range.s.r+30);r++)for(let c=range.s.c;c<=range.e.c;c++){
+    const t=cellText(ws[XLSX.utils.encode_cell({r,c})]).replace(/\s+/g,' ').trim();
+    if(productCol==null&&/^(?:product|product type|joist type|joist system|system)$/i.test(t))productCol=c;
+    if(statusCol==null&&/^(?:status|job type|order type|quote type)$/i.test(t))statusCol=c;
   }
-  return {productCol:productCol??3,estimatorCol:report.estimatorCol,statusCol:statusCol??10,hoursCol:report.hoursCol};
+  return {productCol,estimatorCol:report.estimatorCol,statusCol,hoursCol:report.hoursCol};
+}
+function rowBreakdownValue(ws,r,range,preferredCol,normaliser){
+  if(preferredCol!=null){
+    const preferred=normaliser(cellText(ws[XLSX.utils.encode_cell({r,c:preferredCol})]));
+    if(preferred)return preferred;
+  }
+  for(let c=range.s.c;c<=range.e.c;c++){
+    if(c===preferredCol)continue;
+    const found=normaliser(cellText(ws[XLSX.utils.encode_cell({r,c})]));
+    if(found)return found;
+  }
+  return '';
 }
 function extractBreakdowns(wb,week,sourceFile){
   const combined=new Map();
@@ -36,9 +59,11 @@ function extractBreakdowns(wb,week,sourceFile){
       if(!combined.has(key))combined.set(key,{designer,week,products:{},statuses:{},product_hours:{},status_hours:{},source_file:sourceFile});
       const rec=combined.get(key);
       for(let r=start.r+1;r<=end;r++){
-        const rowEstimator=cellText(ws[XLSX.utils.encode_cell({r,c:estimatorCol})]);if(norm(rowEstimator)!==norm(start.name))continue;
-        const product=normalProduct(cellText(ws[XLSX.utils.encode_cell({r,c:productCol})]));
-        const status=normalStatus(cellText(ws[XLSX.utils.encode_cell({r,c:statusCol})]));
+        const rowEstimator=cellText(ws[XLSX.utils.encode_cell({r,c:estimatorCol})]);
+        if(rowEstimator&&norm(rowEstimator)!==norm(start.name))continue;
+        const product=rowBreakdownValue(ws,r,range,productCol,normalProduct);
+        const status=rowBreakdownValue(ws,r,range,statusCol,normalStatus);
+        if(!product&&!status)continue;
         const hours=numericHours(ws[XLSX.utils.encode_cell({r,c:hoursCol})]);
         addCount(rec.products,product);addCount(rec.statuses,status);
         if(hours!=null&&hours>=0&&hours<=1000){addHours(rec.product_hours,product,hours);addHours(rec.status_hours,status,hours)}
@@ -53,12 +78,10 @@ async function saveBreakdownsFromFiles(files){
   for(const file of excel){try{const d=parseWeekFilename(file.name);if(!d)continue;const week=isoDate(d);const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true,cellFormula:true,cellNF:true,cellText:true});records.push(...extractBreakdowns(wb,week,file.name))}catch(e){console.warn('Breakdown import skipped',file.name,e)}}
   if(!records.length)return;
   try{
-    const res=await fetch('/api/breakdowns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({records})});
-    if(res.ok){
-      breakdownState=await res.json();renderDetail();
-      if(typeof renderProductTotals==='function')renderProductTotals();
-      if(typeof refreshReportPeriods==='function'&&!document.getElementById('managerReportModal')?.hidden)refreshReportPeriods();
-    }
+    breakdownState=await api('/api/breakdowns',{method:'POST',body:JSON.stringify({records})});
+    renderDetail();
+    if(typeof renderProductTotals==='function')renderProductTotals();
+    if(typeof refreshReportPeriods==='function'&&!document.getElementById('managerReportModal')?.hidden)refreshReportPeriods();
   }catch(e){console.warn('Breakdown save failed',e)}
 }
 function breakdownWeeks(){return typeof rangeWeeks==='function'?rangeWeeks():(selectedWeek?[selectedWeek]:[])}
@@ -98,5 +121,14 @@ function appendBreakdownCard(){
 }
 const renderDetailBeforeBreakdowns=renderDetail;
 renderDetail=function(){renderDetailBeforeBreakdowns();appendBreakdownCard()};
+
+const importManyBeforeBreakdowns=importMany;
+importMany=async function(files){
+  await importManyBeforeBreakdowns(files);
+  await saveBreakdownsFromFiles(files);
+  await loadBreakdowns();
+  renderDetail();
+  if(typeof renderProductTotals==='function')renderProductTotals();
+};
 
 loadBreakdowns().then(()=>renderDetail());
