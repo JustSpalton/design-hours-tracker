@@ -141,4 +141,3 @@ importMany=async function(files){
   if(typeof renderProductTotals==='function')renderProductTotals();
 };
 
-loadBreakdowns().then(()=>renderDetail());
