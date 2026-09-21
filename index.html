@@ -5,13 +5,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Design Hours Tracker</title>
 <script src="/vendor/xlsx.full.min.js?v=20260921-1"></script>
-<link rel="stylesheet" href="/styles.css?v=20260921-8" />
+<link rel="stylesheet" href="/styles.css?v=20260921-9" />
 <link rel="stylesheet" href="/range.css?v=20260921-1" />
 <link rel="stylesheet" href="/breakdown.css?v=20260921-1" />
-<link rel="stylesheet" href="/team-report.css?v=20260921-8" />
-<link rel="stylesheet" href="/dashboard.css?v=20260921-8" />
+<link rel="stylesheet" href="/team-report.css?v=20260921-9" />
+<link rel="stylesheet" href="/dashboard.css?v=20260921-9" />
 </head>
-<body>
+<body class="tracker-locked">
+<div class="site-lock" id="siteLock">
+  <div class="site-lock-card">
+    <img src="/donaldson-logo.jpg" alt="Donaldson Timber Engineering" class="site-lock-logo" />
+    <h1>Design Hours Tracker</h1>
+    <p>Enter the 4-digit access PIN</p>
+    <form id="siteLockForm" autocomplete="off">
+      <input id="sitePin" class="site-pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" aria-label="4-digit access PIN" />
+      <button type="submit" class="primary site-unlock-btn" id="siteUnlockBtn">Unlock</button>
+    </form>
+    <div class="site-lock-error" id="siteLockError" role="alert"></div>
+  </div>
+</div>
 <header>
   <div class="brand"><img class="brand-logo" src="/donaldson-logo.jpg" alt="Donaldson Timber Engineering" /><h1>Design Hours Tracker</h1></div>
   <div class="actions">
@@ -19,6 +31,7 @@
     <button class="secondary" id="unlockBtn" hidden></button>
     <label class="button primary edit-control import-header-btn" for="importFiles">Import Excel</label><input id="importFiles" type="file" accept=".xls,.xlsx,.xlsm,.xlsb" multiple />
     <button class="secondary" id="refreshBtn">Refresh</button>
+    <button class="secondary" id="siteLockBtn">Lock</button>
   </div>
 </header>
 <main>
@@ -58,12 +71,12 @@
 <div class="page-drop-overlay" id="pageDropOverlay"><div><strong>Drop Excel to import</strong><span>Weekly or annual estimator files</span></div></div>
 <div class="toast" id="toast"></div>
 <script>sessionStorage.setItem('designHoursEditorKey','open-editing');</script>
-<script src="/firebase-config.js?v=20260921-8"></script>
-<script type="module" src="/firebase-client.js?v=20260921-8"></script>
-<script src="/app.js?v=20260921-8"></script>
-<script src="/range.js?v=20260921-8"></script>
-<script src="/breakdown.js?v=20260921-8"></script>
-<script src="/team-report.js?v=20260921-8"></script>
-<script src="/dashboard.js?v=20260921-8"></script>
+<script src="/firebase-config.js?v=20260921-9"></script>
+<script type="module" src="/firebase-client.js?v=20260921-9"></script>
+<script src="/app.js?v=20260921-9"></script>
+<script src="/range.js?v=20260921-9"></script>
+<script src="/breakdown.js?v=20260921-9"></script>
+<script src="/team-report.js?v=20260921-9"></script>
+<script src="/dashboard.js?v=20260921-9"></script>
 </body>
 </html>
