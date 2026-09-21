@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "mkdir -p vendor && cp node_modules/xlsx/dist/xlsx.full.min.js vendor/xlsx.full.min.js"
+    "build": "rm -rf dist && mkdir -p dist/vendor && cp index.html *.js *.css donaldson-logo.jpg dist/ && cp node_modules/xlsx/dist/xlsx.full.min.js dist/vendor/xlsx.full.min.js"
   },
   "dependencies": {
     "xlsx": "^0.18.5"
