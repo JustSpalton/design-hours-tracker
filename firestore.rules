@@ -70,6 +70,11 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /tracker/ncrSource {
+      allow read: if hasTrackerAccess();
+      allow write: if false;
+    }
+
     match /ncrChunks/{chunkId} {
       allow read, create, update, delete: if hasTrackerAccess();
     }
