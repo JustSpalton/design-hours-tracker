@@ -144,7 +144,7 @@ document.getElementById('previousWeekBtn').addEventListener('click',()=>moveTrac
 document.getElementById('nextWeekBtn').addEventListener('click',()=>moveTrackerWeek(1));
 document.getElementById('designerSearch').addEventListener('input',renderDesignerList);
 document.getElementById('refreshBtn').addEventListener('click',()=>loadData());
-document.getElementById('unlockBtn').addEventListener('click',async()=>{if(editorKey){editorKey='';sessionStorage.removeItem('designHoursEditorKey');setEditingUI();showToast('Editing locked');return}const pin=prompt('Enter the editor PIN');if(!pin)return;const old=editorKey;editorKey=pin;try{await api('/api/auth',{method:'POST'});sessionStorage.setItem('designHoursEditorKey',editorKey);setEditingUI();showToast('Editing unlocked')}catch(e){editorKey=old;alert(e.message)}});
+document.getElementById('unlockBtn').addEventListener('click',()=>{if(editorKey){editorKey='';sessionStorage.removeItem('designHoursEditorKey');setEditingUI();showToast('Editing locked');return}editorKey='open-editing';sessionStorage.setItem('designHoursEditorKey',editorKey);setEditingUI();showToast('Editing unlocked')});
 document.getElementById('addDesignerBtn').addEventListener('click',async()=>{const name=prompt('New designer name');if(!name)return;try{await api('/api/designers',{method:'POST',body:JSON.stringify({name})});await loadData(true);selectedDesigner=name.replace(/\s+/g,' ').trim();renderAll();showToast(`${selectedDesigner} added`)}catch(e){alert(e.message)}});
 document.getElementById('importFiles').addEventListener('change',e=>{importMany([...e.target.files]);e.target.value='' });
 
@@ -177,4 +177,67 @@ document.addEventListener('drop',e=>{
   importMany(files);
 });
 window.addEventListener('blur',clearExcelDrag);
-setEditingUI();loadData(true);setInterval(()=>loadData(true),30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadData(true)});
+
+let trackerStarted=false;
+let trackerRefreshTimer=null;
+
+function showTrackerLock(message=''){
+  document.body.classList.add('tracker-locked');
+  document.getElementById('siteLock').hidden=false;
+  document.getElementById('siteLockError').textContent=message;
+  setTimeout(()=>document.getElementById('sitePin')?.focus(),0);
+}
+async function startTracker(){
+  if(trackerStarted)return;
+  trackerStarted=true;
+  document.body.classList.remove('tracker-locked');
+  document.getElementById('siteLock').hidden=true;
+  setEditingUI();
+  await loadData(true);
+  if(typeof loadBreakdowns==='function'){
+    await loadBreakdowns();
+    renderDetail();
+    if(typeof renderProductTotals==='function')renderProductTotals();
+  }
+  trackerRefreshTimer=setInterval(()=>loadData(true),30000);
+}
+async function restoreTrackerAccess(){
+  if(sessionStorage.getItem('designHoursUnlocked')!=='1'){showTrackerLock();return}
+  try{
+    await api('/api/access');
+    await startTracker();
+  }catch(_){
+    sessionStorage.removeItem('designHoursUnlocked');
+    showTrackerLock();
+  }
+}
+async function unlockTracker(pin){
+  await api('/api/unlock',{method:'POST',body:JSON.stringify({pin})});
+  sessionStorage.setItem('designHoursUnlocked','1');
+  await startTracker();
+}
+async function lockTracker(){
+  sessionStorage.removeItem('designHoursUnlocked');
+  if(trackerRefreshTimer){clearInterval(trackerRefreshTimer);trackerRefreshTimer=null}
+  trackerStarted=false;
+  try{await api('/api/lock',{method:'POST'})}catch(_){}
+  state={designers:[],hours:[],holidays:[],holidayReady:false,importLog:[],teams:[]};
+  breakdownState={records:[]};
+  selectedWeek=null;selectedDesigner=null;
+  showTrackerLock();
+}
+document.getElementById('siteLockForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const input=document.getElementById('sitePin'),button=document.getElementById('siteUnlockBtn'),error=document.getElementById('siteLockError');
+  const pin=String(input.value||'').replace(/\D/g,'').slice(0,4);
+  input.value=pin;
+  if(pin.length!==4){error.textContent='Enter all 4 digits.';input.focus();return}
+  button.disabled=true;button.textContent='Checking…';error.textContent='';
+  try{await unlockTracker(pin);input.value=''}
+  catch(err){error.textContent=err?.message||'Unable to unlock the tracker.';input.select()}
+  finally{button.disabled=false;button.textContent='Unlock'}
+});
+document.getElementById('sitePin').addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D/g,'').slice(0,4);document.getElementById('siteLockError').textContent=''});
+document.getElementById('siteLockBtn').addEventListener('click',lockTracker);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&trackerStarted)loadData(true)});
+window.addEventListener('load',restoreTrackerAccess);
