@@ -122,8 +122,51 @@ function dashboardTrendText(value){
 }
 function dashboardCoverage(weeks){
   const wanted=new Set(weeks);
+  const recordedHoursWeeks=new Set((state.hours||[]).filter(x=>wanted.has(x.week)).map(x=>x.week));
   const covered=new Set((typeof breakdownState!=='undefined'?(breakdownState.records||[]):[]).filter(x=>wanted.has(x.week)).map(x=>x.week));
-  return {covered:covered.size,total:weeks.length};
+  const missing=[...recordedHoursWeeks].filter(w=>!covered.has(w)).sort();
+  return {covered:[...recordedHoursWeeks].filter(w=>covered.has(w)).length,total:recordedHoursWeeks.size,missing};
+}
+function dashboardQuantile(values,q){
+  const a=values.filter(Number.isFinite).slice().sort((x,y)=>x-y);if(!a.length)return 0;
+  const pos=(a.length-1)*q,base=Math.floor(pos),rest=pos-base;
+  return a[base+1]!==undefined?a[base]+rest*(a[base+1]-a[base]):a[base];
+}
+function dashboardHourBands(weeks){
+  const wanted=new Set(weeks),values=[];
+  for(const row of state.hours||[]){
+    if(!wanted.has(row.week))continue;
+    const v=adjustedHours(Number(row.hours||0),holidayCount(row.designer,row.week));
+    if(Number.isFinite(v))values.push(v);
+  }
+  return {low:dashboardQuantile(values,.25),high:dashboardQuantile(values,.75)};
+}
+function dashboardBandClass(value,bands){
+  if(!Number.isFinite(value))return '';
+  if(value<bands.low)return 'hours-band-low';
+  if(value>bands.high)return 'hours-band-high';
+  return 'hours-band-mid';
+}
+function dashboardSparkline(designer,weeks,bands){
+  const wanted=new Set(weeks);
+  const rows=(state.hours||[]).filter(x=>norm(x.designer)===norm(designer)&&wanted.has(x.week)).sort((a,b)=>a.week.localeCompare(b.week)).slice(-16);
+  if(!rows.length)return '<span class="spark-empty">—</span>';
+  const vals=rows.map(x=>adjustedHours(Number(x.hours||0),holidayCount(designer,x.week))).filter(Number.isFinite);
+  if(!vals.length)return '<span class="spark-empty">—</span>';
+  const W=118,H=34,p=3,min=Math.min(...vals,bands.low),max=Math.max(...vals,bands.high,1),span=Math.max(1,max-min);
+  const x=i=>p+(vals.length===1?(W-p*2)/2:i*(W-p*2)/(vals.length-1));
+  const y=v=>p+(max-v)*(H-p*2)/span;
+  const yLow=y(bands.low),yHigh=y(bands.high);
+  const top=Math.min(yHigh,yLow),midH=Math.abs(yLow-yHigh);
+  const pts=vals.map((v,i)=>`${x(i)},${y(v)}`).join(' ');
+  const last=vals.at(-1);
+  return `<svg class="designer-spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="Recent weekly hours trend"><rect x="0" y="0" width="${W}" height="${Math.max(0,top)}" class="spark-band-high"/><rect x="0" y="${top}" width="${W}" height="${midH}" class="spark-band-mid"/><rect x="0" y="${top+midH}" width="${W}" height="${Math.max(0,H-(top+midH))}" class="spark-band-low"/><polyline points="${pts}" fill="none" class="spark-line" stroke-width="2"/><circle cx="${x(vals.length-1)}" cy="${y(last)}" r="2.5" class="spark-dot"><title>Latest adjusted week: ${last.toFixed(1)}h</title></circle></svg>`;
+}
+function dashboardProductMix(p){
+  const total=Number(p.iJoist||0)+Number(p.posiJoist||0);
+  if(!total)return '<span class="mix-empty">—</span>';
+  const i=Math.round(Number(p.iJoist||0)/total*100),posi=100-i;
+  return `<div class="mix-percent"><div><strong>${i}%</strong><span>I</span></div><div><strong>${posi}%</strong><span>Posi</span></div></div>`;
 }
 function openDashboardDesigner(name){
   selectedDesigner=name;
@@ -141,25 +184,30 @@ function renderDashboard(){
   const avgTeamWeek=weekly.length?totalHours/weekly.length:0;
   const allBreakdowns=people.reduce((a,x)=>({jobs:a.jobs+x.jobs,iJoist:a.iJoist+x.iJoist,posiJoist:a.posiJoist+x.posiJoist}),{jobs:0,iJoist:0,posiJoist:0});
   const coverage=dashboardCoverage(weeks);
+  const hourBands=dashboardHourBands(weeks);
   const workTrend=dashboardWorkCategoryTrend(weeks);
   const workTotals=dashboardWorkCategoryTotals(workTrend,dashboardWorkMetric);
   const splitTotal=allBreakdowns.iJoist+allBreakdowns.posiJoist;
   const iPct=splitTotal?allBreakdowns.iJoist/splitTotal*100:0;
-  const rows=people.map(p=>`<tr class="dashboard-person" data-dashboard-designer="${escapeHtml(p.name)}" tabindex="0"><td><strong>${escapeHtml(p.name)}</strong><span class="dashboard-row-hint">View details</span></td><td class="right">${p.total.toFixed(1)}</td><td class="right">${p.avg.toFixed(1)}</td><td class="right">${p.jobs||'—'}</td><td class="right">${p.iJoist||'—'}</td><td class="right">${p.posiJoist||'—'}</td><td class="right">${dashboardTrendText(p.trend)}</td></tr>`).join('');
+  const rows=people.map(p=>`<tr class="dashboard-person" data-dashboard-designer="${escapeHtml(p.name)}" tabindex="0"><td><strong>${escapeHtml(p.name)}</strong><span class="dashboard-row-hint">View details</span></td><td class="spark-cell">${dashboardSparkline(p.name,weeks,hourBands)}</td><td class="right">${p.total.toFixed(1)}</td><td class="right"><span class="hours-band ${dashboardBandClass(p.avg,hourBands)}" title="Relative to the team distribution for this rolling period">${p.avg.toFixed(1)}</span></td><td class="right">${p.jobs||'—'}</td><td class="right">${p.iJoist||'—'}</td><td class="right">${p.posiJoist||'—'}</td><td>${dashboardProductMix(p)}</td><td class="right">${dashboardTrendText(p.trend)}</td></tr>`).join('');
   box.innerHTML=`<div class="dashboard-shell">
     <div class="dashboard-head"><div><div class="dashboard-kicker">TEAM OVERVIEW</div><h2>Design Hours Dashboard</h2><p>Rolling ${dashboardMonths} months • ${fmtDate(bounds.start)} to ${fmtDate(bounds.end)}</p></div><div class="dashboard-period"><button type="button" data-dashboard-months="6" class="${dashboardMonths===6?'active':''}">6 months</button><button type="button" data-dashboard-months="12" class="${dashboardMonths===12?'active':''}">12 months</button></div></div>
     <div class="dashboard-cards">
       <div class="dashboard-card"><span>Total design hours</span><strong>${totalHours.toFixed(1)}</strong><em>${weekly.length} recorded weeks</em></div>
       <div class="dashboard-card"><span>Average team hours / week</span><strong>${avgTeamWeek.toFixed(1)}</strong><em>Across recorded weeks</em></div>
-      <div class="dashboard-card"><span>Jobs recorded</span><strong>${allBreakdowns.jobs}</strong><em>${coverage.covered} of ${coverage.total} weeks have job data</em></div>
+      <div class="dashboard-card"><span>Jobs recorded</span><strong>${allBreakdowns.jobs}</strong><em>${coverage.total?`${coverage.covered} of ${coverage.total} recorded weeks have job data`:'No recorded weeks in range'}</em></div>
       <div class="dashboard-card"><span>Active designers</span><strong>${people.length}</strong><em>With hours in this period</em></div>
+    </div>
+    <div class="dashboard-readability-row">
+      <div class="dashboard-missing ${coverage.missing.length?'has-missing':'complete'}"><strong>${coverage.missing.length?'Missing job-data weeks':'Job data complete'}</strong><span>${coverage.missing.length?coverage.missing.map(w=>`W/C ${fmtDate(w)}`).join(' • '):'Every recorded hours week in this view has job breakdown data.'}</span></div>
+      <div class="hours-band-legend"><span>Weekly hour bands:</span><i class="hours-band-low"></i><b>Lower</b><i class="hours-band-mid"></i><b>Typical</b><i class="hours-band-high"></i><b>Higher</b><em>relative to this rolling period</em></div>
     </div>
     <div class="dashboard-grid">
       <section class="dashboard-section dashboard-trend"><div class="dashboard-section-head"><div><h3>Team weekly hours trend</h3><span>Actual design hours by week</span></div></div><div class="dashboard-chart">${dashboardTrendSvg(weekly)}</div></section>
       <section class="dashboard-section dashboard-split"><div class="dashboard-section-head"><div><h3>Job type split</h3><span>I Joist vs Posi Joist</span></div></div>
         <div class="dashboard-split-body"><div class="split-numbers"><div><span>I Joist</span><strong>${allBreakdowns.iJoist}</strong></div><div><span>Posi Joist</span><strong>${allBreakdowns.posiJoist}</strong></div></div>
         ${splitTotal?`<div class="split-bar"><span style="width:${iPct}%"></span></div><div class="split-labels"><span>${iPct.toFixed(0)}% I Joist</span><span>${(100-iPct).toFixed(0)}% Posi</span></div>`:'<div class="dashboard-empty compact">Re-import historical weekly files to build the job-type trend.</div>'}
-        ${coverage.covered<coverage.total? `<div class="coverage-note">Job counts currently cover ${coverage.covered} of ${coverage.total} weeks in this view.</div>`:''}</div>
+        ${coverage.missing.length? `<div class="coverage-note">${coverage.missing.length} recorded week${coverage.missing.length===1?' is':'s are'} missing job breakdown data. See the list above.</div>`:''}</div>
       </section>
     </div>
     <section class="dashboard-section dashboard-work-trend">
@@ -174,7 +222,7 @@ function renderDashboard(){
       <div class="dashboard-chart">${dashboardWorkTrendSvg(workTrend,dashboardWorkMetric)}</div>
     </section>
     <section class="dashboard-section dashboard-comparison"><div class="dashboard-section-head"><div><h3>Designer comparison</h3><span>Summary only — click a designer for their detailed history</span></div></div>
-      <div class="dashboard-table-wrap"><table><thead><tr><th>Designer</th><th class="right">Total hrs</th><th class="right">Avg hrs / wk</th><th class="right">Jobs</th><th class="right">I Joist</th><th class="right">Posi Joist</th><th class="right">4-week trend</th></tr></thead><tbody>${rows||'<tr><td colspan="7"><div class="dashboard-empty">No designer history is available for this period.</div></td></tr>'}</tbody></table></div>
+      <div class="dashboard-table-wrap"><table><thead><tr><th>Designer</th><th>Recent trend</th><th class="right">Total hrs</th><th class="right">Avg hrs / wk</th><th class="right">Jobs</th><th class="right">I Joist</th><th class="right">Posi Joist</th><th>Product mix</th><th class="right">4-week trend</th></tr></thead><tbody>${rows||'<tr><td colspan="9"><div class="dashboard-empty">No designer history is available for this period.</div></td></tr>'}</tbody></table></div>
     </section>
   </div>`;
   box.querySelectorAll('[data-dashboard-months]').forEach(btn=>btn.addEventListener('click',()=>{dashboardMonths=Number(btn.dataset.dashboardMonths)||6;renderDetail()}));
