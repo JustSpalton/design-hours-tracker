@@ -1,18 +1,10 @@
 {
   "hosting": {
-    "public": ".",
+    "public": "dist",
     "ignore": [
       "firebase.json",
-      "firestore.rules",
-      "firestore.indexes.json",
-      "netlify.toml",
-      "netlify/**",
-      "scripts/**",
-      "node_modules/**",
-      "package.json",
-      "pnpm-lock.yaml",
-      ".git/**",
-      ".github/**"
+      "**/.*",
+      "**/node_modules/**"
     ],
     "cleanUrls": true,
     "headers": [
