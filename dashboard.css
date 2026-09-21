@@ -13,3 +13,13 @@ body.dashboard-home .detail{border:0;background:transparent}
 .dashboard-table-wrap{overflow:auto}.dashboard-comparison table{margin:0}.dashboard-person{cursor:pointer}.dashboard-person:hover{background:#fff5f5}.dashboard-person:focus{outline:2px solid var(--red);outline-offset:-2px}.dashboard-row-hint{display:block;font-size:9px;color:var(--red-dark);margin-top:2px;font-weight:700}.trend-up{color:#14804a;font-weight:850}.trend-down{color:#b42318;font-weight:850}.trend-flat{color:var(--muted);font-weight:850}.dashboard-empty{padding:34px;text-align:center;color:var(--muted);font-size:12px}.dashboard-empty.compact{padding:18px 0}.back-dashboard{margin-right:8px;white-space:nowrap}
 @media(max-width:1050px){.dashboard-cards{grid-template-columns:1fr 1fr}.dashboard-grid{grid-template-columns:1fr}}
 @media(max-width:650px){.dashboard-head{align-items:flex-start;flex-direction:column}.dashboard-period{width:100%}.dashboard-period button{flex:1}.dashboard-cards{grid-template-columns:1fr}.dashboard-chart svg{min-width:560px}.back-dashboard{width:100%;margin:0 0 8px}.detail-top{flex-wrap:wrap}}
+
+.dashboard-work-trend{grid-column:1/-1}
+.dashboard-metric-toggle{display:flex;border:1.5px solid var(--red);border-radius:7px;overflow:hidden;flex-shrink:0}
+.dashboard-metric-toggle button{border-radius:0;background:#fff;color:var(--ink);padding:8px 12px}
+.dashboard-metric-toggle button.active{background:var(--red);color:#fff}
+.dashboard-work-summary{display:flex;gap:22px;align-items:center;padding:12px 15px 0}
+.dashboard-work-summary>div{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted)}
+.dashboard-work-summary strong{font-size:17px;color:var(--ink);margin-left:2px}
+.legend-dot{width:10px;height:10px;border-radius:999px;display:inline-block}.legend-dot.amendment{background:#d71920}.legend-dot.otp{background:#222}
+@media(max-width:650px){.dashboard-section-head{align-items:flex-start;gap:10px;flex-direction:column}.dashboard-metric-toggle{width:100%}.dashboard-metric-toggle button{flex:1}.dashboard-work-summary{align-items:flex-start;flex-direction:column;gap:8px}}
