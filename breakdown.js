@@ -3,8 +3,10 @@ let breakdownView='status';
 let breakdownMetric='jobs';
 
 function breakdownInitials(name){return String(name||'').trim().split(/\s+/).filter(Boolean).map(x=>x[0]).join('').toUpperCase()}
+function canonicalBreakdownDesignerName(name){const clean=String(name||'').replace(/\s+/g,' ').trim();const aliases={'jon wilson':'Jonathan Wilson','kerry mui':'Kerry Gardiner'};return aliases[clean.toLowerCase()]||clean}
 function resolveBreakdownDesigner(imported){
-  const exact=state.designers.find(d=>norm(d.name)===norm(imported));if(exact)return exact.name;
+  const canonical=canonicalBreakdownDesignerName(imported);
+  const exact=state.designers.find(d=>norm(d.name)===norm(canonical));if(exact)return exact.name;
   const ini=breakdownInitials(imported);const matches=state.designers.filter(d=>breakdownInitials(d.name)===ini);
   return matches.length===1?matches[0].name:null;
 }
