@@ -1,4 +1,5 @@
 let dashboardMonths=6;
+let dashboardWorkMetric='jobs';
 
 function dashboardLatestWeek(){
   const weeks=(state.hours||[]).map(x=>x.week).filter(Boolean).sort();
@@ -58,6 +59,61 @@ function dashboardTrendSvg(data){
   const dots=data.map((d,i)=>`<circle cx="${x(i)}" cy="${y(d.hours)}" r="3.5" fill="#d71920"><title>W/C ${fmtDate(d.week)}: ${d.hours.toFixed(1)}h • ${d.designers} designer${d.designers===1?'':'s'}</title></circle>`).join('');
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Team weekly design hours trend">${grid}<polyline points="${pts}" fill="none" stroke="#d71920" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>${dots}${labels}</svg>`;
 }
+function dashboardMonthKey(week){
+  const d=parseISO(week);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+}
+function dashboardMonthLabel(key){
+  const [year,month]=key.split('-').map(Number);
+  return new Date(Date.UTC(year,month-1,1)).toLocaleDateString('en-GB',{timeZone:'UTC',month:'short',year:'2-digit'});
+}
+function dashboardWorkCategoryTrend(weeks){
+  const wanted=new Set(weeks),months=new Map();
+  for(const week of weeks){const key=dashboardMonthKey(week);if(!months.has(key))months.set(key,{key,label:dashboardMonthLabel(key),amendmentJobs:0,otpJobs:0,amendmentHours:0,otpHours:0})}
+  for(const rec of (typeof breakdownState!=='undefined'?(breakdownState.records||[]):[])){
+    if(!wanted.has(rec.week))continue;
+    const key=dashboardMonthKey(rec.week);
+    if(!months.has(key))months.set(key,{key,label:dashboardMonthLabel(key),amendmentJobs:0,otpJobs:0,amendmentHours:0,otpHours:0});
+    const row=months.get(key);
+    row.amendmentJobs+=Number(rec.statuses?.Amendment||0);
+    row.otpJobs+=Number(rec.statuses?.OTP||0);
+    row.amendmentHours+=Number(rec.status_hours?.Amendment||0);
+    row.otpHours+=Number(rec.status_hours?.OTP||0);
+  }
+  return [...months.values()].sort((a,b)=>a.key.localeCompare(b.key));
+}
+function dashboardWorkTrendSvg(data,metric){
+  const amendmentKey=metric==='hours'?'amendmentHours':'amendmentJobs';
+  const otpKey=metric==='hours'?'otpHours':'otpJobs';
+  const usable=data.filter(x=>Number(x[amendmentKey])>0||Number(x[otpKey])>0);
+  if(!usable.length)return '<div class="dashboard-empty">No Amendment / OTP breakdown data is available for this period. Re-import the weekly spreadsheets to build this trend.</div>';
+  const W=1000,H=300,p={l:52,r:18,t:28,b:50};
+  const rawMax=Math.max(...data.flatMap(x=>[Number(x[amendmentKey]||0),Number(x[otpKey]||0)]));
+  const step=metric==='hours'?10:5;
+  const max=Math.max(step,Math.ceil(rawMax/step)*step);
+  const x=i=>p.l+(data.length===1?(W-p.l-p.r)/2:i*(W-p.l-p.r)/(data.length-1));
+  const y=v=>p.t+(max-v)*(H-p.t-p.b)/max;
+  let grid='';
+  for(let i=0;i<=4;i++){
+    const v=max*(4-i)/4,yy=p.t+i*(H-p.t-p.b)/4;
+    grid+=`<line x1="${p.l}" y1="${yy}" x2="${W-p.r}" y2="${yy}" stroke="#e5e7eb"/><text x="${p.l-9}" y="${yy+4}" text-anchor="end" font-size="10" fill="#6b7280">${metric==='hours'?v.toFixed(1):v.toFixed(0)}</text>`;
+  }
+  const amendmentPts=data.map((d,i)=>`${x(i)},${y(Number(d[amendmentKey]||0))}`).join(' ');
+  const otpPts=data.map((d,i)=>`${x(i)},${y(Number(d[otpKey]||0))}`).join(' ');
+  const labels=data.map((d,i)=>`<text x="${x(i)}" y="${H-18}" text-anchor="middle" font-size="10" fill="#6b7280">${escapeHtml(d.label)}</text>`).join('');
+  const suffix=metric==='hours'?'h':' jobs';
+  const amendmentDots=data.map((d,i)=>`<circle cx="${x(i)}" cy="${y(Number(d[amendmentKey]||0))}" r="3.5" fill="#d71920"><title>${d.label} Amendments: ${Number(d[amendmentKey]||0).toFixed(metric==='hours'?1:0)}${suffix}</title></circle>`).join('');
+  const otpDots=data.map((d,i)=>`<circle cx="${x(i)}" cy="${y(Number(d[otpKey]||0))}" r="3.5" fill="#222"><title>${d.label} OTPs: ${Number(d[otpKey]||0).toFixed(metric==='hours'?1:0)}${suffix}</title></circle>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Amendment versus OTP ${metric} trend">${grid}<polyline points="${amendmentPts}" fill="none" stroke="#d71920" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/><polyline points="${otpPts}" fill="none" stroke="#222" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>${amendmentDots}${otpDots}${labels}</svg>`;
+}
+function dashboardWorkCategoryTotals(data,metric){
+  const amendmentKey=metric==='hours'?'amendmentHours':'amendmentJobs';
+  const otpKey=metric==='hours'?'otpHours':'otpJobs';
+  return {
+    amendment:data.reduce((s,x)=>s+Number(x[amendmentKey]||0),0),
+    otp:data.reduce((s,x)=>s+Number(x[otpKey]||0),0)
+  };
+}
 function dashboardTrendText(value){
   if(value==null||!Number.isFinite(value))return '<span class="trend-flat">—</span>';
   const cls=value>2?'trend-up':value<-2?'trend-down':'trend-flat';
@@ -85,6 +141,8 @@ function renderDashboard(){
   const avgTeamWeek=weekly.length?totalHours/weekly.length:0;
   const allBreakdowns=people.reduce((a,x)=>({jobs:a.jobs+x.jobs,iJoist:a.iJoist+x.iJoist,posiJoist:a.posiJoist+x.posiJoist}),{jobs:0,iJoist:0,posiJoist:0});
   const coverage=dashboardCoverage(weeks);
+  const workTrend=dashboardWorkCategoryTrend(weeks);
+  const workTotals=dashboardWorkCategoryTotals(workTrend,dashboardWorkMetric);
   const splitTotal=allBreakdowns.iJoist+allBreakdowns.posiJoist;
   const iPct=splitTotal?allBreakdowns.iJoist/splitTotal*100:0;
   const rows=people.map(p=>`<tr class="dashboard-person" data-dashboard-designer="${escapeHtml(p.name)}" tabindex="0"><td><strong>${escapeHtml(p.name)}</strong><span class="dashboard-row-hint">View details</span></td><td class="right">${p.total.toFixed(1)}</td><td class="right">${p.avg.toFixed(1)}</td><td class="right">${p.jobs||'—'}</td><td class="right">${p.iJoist||'—'}</td><td class="right">${p.posiJoist||'—'}</td><td class="right">${dashboardTrendText(p.trend)}</td></tr>`).join('');
@@ -104,11 +162,23 @@ function renderDashboard(){
         ${coverage.covered<coverage.total? `<div class="coverage-note">Job counts currently cover ${coverage.covered} of ${coverage.total} weeks in this view.</div>`:''}</div>
       </section>
     </div>
+    <section class="dashboard-section dashboard-work-trend">
+      <div class="dashboard-section-head">
+        <div><h3>Amendment vs OTP trend</h3><span>Monthly work-category trend across the rolling ${dashboardMonths}-month view</span></div>
+        <div class="dashboard-metric-toggle"><button type="button" data-work-metric="jobs" class="${dashboardWorkMetric==='jobs'?'active':''}">Jobs</button><button type="button" data-work-metric="hours" class="${dashboardWorkMetric==='hours'?'active':''}">Hours</button></div>
+      </div>
+      <div class="dashboard-work-summary">
+        <div><span class="legend-dot amendment"></span><span>Amendments</span><strong>${dashboardWorkMetric==='hours'?workTotals.amendment.toFixed(1)+'h':workTotals.amendment}</strong></div>
+        <div><span class="legend-dot otp"></span><span>OTPs</span><strong>${dashboardWorkMetric==='hours'?workTotals.otp.toFixed(1)+'h':workTotals.otp}</strong></div>
+      </div>
+      <div class="dashboard-chart">${dashboardWorkTrendSvg(workTrend,dashboardWorkMetric)}</div>
+    </section>
     <section class="dashboard-section dashboard-comparison"><div class="dashboard-section-head"><div><h3>Designer comparison</h3><span>Summary only — click a designer for their detailed history</span></div></div>
       <div class="dashboard-table-wrap"><table><thead><tr><th>Designer</th><th class="right">Total hrs</th><th class="right">Avg hrs / wk</th><th class="right">Jobs</th><th class="right">I Joist</th><th class="right">Posi Joist</th><th class="right">4-week trend</th></tr></thead><tbody>${rows||'<tr><td colspan="7"><div class="dashboard-empty">No designer history is available for this period.</div></td></tr>'}</tbody></table></div>
     </section>
   </div>`;
   box.querySelectorAll('[data-dashboard-months]').forEach(btn=>btn.addEventListener('click',()=>{dashboardMonths=Number(btn.dataset.dashboardMonths)||6;renderDetail()}));
+  box.querySelectorAll('[data-work-metric]').forEach(btn=>btn.addEventListener('click',()=>{dashboardWorkMetric=btn.dataset.workMetric==='hours'?'hours':'jobs';renderDetail()}));
   box.querySelectorAll('[data-dashboard-designer]').forEach(row=>{
     const open=()=>openDashboardDesigner(row.dataset.dashboardDesigner);
     row.addEventListener('click',open);row.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open()}});
