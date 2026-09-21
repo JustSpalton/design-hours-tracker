@@ -1,11 +1,14 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
-import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
+import { getAuth, signInAnonymously, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
 import {
   getFirestore,
   doc,
   getDoc,
   runTransaction,
-  serverTimestamp
+  serverTimestamp,
+  setDoc,
+  deleteDoc,
+  Timestamp
 } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
 
 const config = window.DESIGN_HOURS_FIREBASE_CONFIG;
@@ -19,7 +22,12 @@ const db = getFirestore(firebaseApp);
 const stateRef = doc(db, "tracker", "state");
 const breakdownRef = doc(db, "tracker", "breakdowns");
 
-window.firebaseReady = signInAnonymously(auth);
+window.firebaseReady = (async () => {
+  await setPersistence(auth, browserSessionPersistence);
+  if (typeof auth.authStateReady === "function") await auth.authStateReady();
+  if (auth.currentUser) return { user: auth.currentUser };
+  return signInAnonymously(auth);
+})();
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const cleanName = value => String(value || "").replace(/\s+/g, " ").trim();
@@ -89,6 +97,39 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
   await window.firebaseReady;
   const method = String(options.method || "GET").toUpperCase();
 
+  if (path === "/api/access" && method === "GET") {
+    await getDoc(stateRef);
+    return { ok: true };
+  }
+
+  if (path === "/api/unlock" && method === "POST") {
+    const body = parseBody(options);
+    const pin = String(body.pin || "").trim();
+    if (!/^\d{4}$/.test(pin)) throw new Error("Enter a 4-digit PIN.");
+    const user = auth.currentUser;
+    if (!user) throw new Error("Secure session is not ready. Refresh and try again.");
+    const sessionRef = doc(db, "accessSessions", user.uid);
+    const expiresAt = Timestamp.fromMillis(Date.now() + 12 * 60 * 60 * 1000);
+    try {
+      await setDoc(sessionRef, { pin, verified: true, expiresAt });
+      await setDoc(sessionRef, { verified: true, expiresAt });
+      return { ok: true };
+    } catch (error) {
+      if (String(error?.code || "").includes("permission-denied")) {
+        throw new Error("Incorrect PIN.");
+      }
+      throw error;
+    }
+  }
+
+  if (path === "/api/lock" && method === "POST") {
+    const user = auth.currentUser;
+    if (user) {
+      try { await deleteDoc(doc(db, "accessSessions", user.uid)); } catch (_) {}
+    }
+    return { ok: true };
+  }
+
   if (path === "/api/data" && method === "GET") {
     const data = await readRequired(stateRef, "Tracker data");
     const result = canonicalizeStateNames(clone(data));
@@ -97,7 +138,6 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
     return result;
   }
 
-  if (path === "/api/auth" && method === "POST") return { ok: true };
 
   if (path === "/api/breakdowns" && method === "GET") {
     const snapshot = await getDoc(breakdownRef);
