@@ -101,6 +101,7 @@ async function importNcrMany(files){
     ncrState={records:result.records||all,sourceFile:result.sourceFile||names.join(', '),importedAt:result.importedAt||new Date().toISOString()};
     ncrLoaded=true;
     renderNcr();
+updateAppImportContext();
     showToast(`${ncrState.records.length} NCR records saved`);
   }catch(e){alert(e.message)}
   if(errors.length)alert(errors.join('\n'));
@@ -132,7 +133,7 @@ function ncrFiltered(){
   const all=ncrState.records||[],start=ncrPeriodStart(all);
   const q=norm(ncrFilters.search);
   return all.filter(r=>{
-    if(start&&r.dateReported&&r.dateReported<start)return false;
+    if(start&&(!r.dateReported||r.dateReported<start))return false;
     if(ncrFilters.category&&r.category!==ncrFilters.category)return false;
     if(ncrFilters.employee&&r.employee!==ncrFilters.employee)return false;
     if(ncrFilters.customer&&r.customer!==ncrFilters.customer)return false;
