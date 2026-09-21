@@ -5,18 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Design Hours Tracker</title>
 <script src="/vendor/xlsx.full.min.js?v=20260921-1"></script>
-<link rel="stylesheet" href="/styles.css?v=20260921-1" />
+<link rel="stylesheet" href="/styles.css?v=20260921-7" />
 <link rel="stylesheet" href="/range.css?v=20260921-1" />
 <link rel="stylesheet" href="/breakdown.css?v=20260921-1" />
-<link rel="stylesheet" href="/team-report.css?v=20260921-6" />
-<link rel="stylesheet" href="/dashboard.css?v=20260921-6" />
+<link rel="stylesheet" href="/team-report.css?v=20260921-7" />
+<link rel="stylesheet" href="/dashboard.css?v=20260921-7" />
 </head>
 <body>
 <header>
-  <div class="brand"><div class="donaldson-wordmark"><span class="donaldson-d">D</span><span>DONALDSON</span></div><h1>Design Hours Tracker</h1></div>
+  <div class="brand"><img class="brand-logo" src="/donaldson-logo.jpg" alt="Donaldson Timber Engineering" /><h1>Design Hours Tracker</h1></div>
   <div class="actions">
     <span class="lock" id="editState" hidden></span>
     <button class="secondary" id="unlockBtn" hidden></button>
+    <label class="button primary edit-control import-header-btn" for="importFiles">Import Excel</label><input id="importFiles" type="file" accept=".xls,.xlsx,.xlsm,.xlsb" multiple />
     <button class="secondary" id="refreshBtn">Refresh</button>
   </div>
 </header>
@@ -27,10 +28,6 @@
       <label for="weekSelect">Week commencing</label>
       <select id="weekSelect"></select>
       <div class="live"><span class="dot"></span><span id="syncText">Shared tracker</span></div>
-    </div>
-    <div class="drop" id="dropZone">
-      <div><strong>Drop weekly or annual estimator Excel here</strong></div>
-      <label class="button primary edit-control" for="importFiles">Choose files</label><input id="importFiles" type="file" accept=".xls,.xlsx,.xlsm,.xlsb" multiple />
     </div>
   </div>
   <div class="stats">
@@ -50,14 +47,15 @@
     <div class="section-body" id="importLog"></div>
   </div>
 </main>
+<div class="page-drop-overlay" id="pageDropOverlay"><div><strong>Drop Excel to import</strong><span>Weekly or annual estimator files</span></div></div>
 <div class="toast" id="toast"></div>
 <script>sessionStorage.setItem('designHoursEditorKey','open-editing');</script>
-<script src="/firebase-config.js?v=20260921-6"></script>
-<script type="module" src="/firebase-client.js?v=20260921-6"></script>
-<script src="/app.js?v=20260921-6"></script>
-<script src="/range.js?v=20260921-6"></script>
-<script src="/breakdown.js?v=20260921-6"></script>
-<script src="/team-report.js?v=20260921-6"></script>
-<script src="/dashboard.js?v=20260921-6"></script>
+<script src="/firebase-config.js?v=20260921-7"></script>
+<script type="module" src="/firebase-client.js?v=20260921-7"></script>
+<script src="/app.js?v=20260921-7"></script>
+<script src="/range.js?v=20260921-7"></script>
+<script src="/breakdown.js?v=20260921-7"></script>
+<script src="/team-report.js?v=20260921-7"></script>
+<script src="/dashboard.js?v=20260921-7"></script>
 </body>
 </html>
