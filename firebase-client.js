@@ -23,6 +23,24 @@ window.firebaseReady = signInAnonymously(auth);
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const cleanName = value => String(value || "").replace(/\s+/g, " ").trim();
+const designerAliases = new Map([
+  ["jon wilson", "Jonathan Wilson"],
+  ["kerry mui", "Kerry Gardiner"]
+]);
+const canonicalDesignerName = value => {
+  const cleaned = cleanName(value);
+  return designerAliases.get(cleaned.toLowerCase()) || cleaned;
+};
+const canonicalizeStateNames = state => {
+  for (const designer of state.designers || []) designer.name = canonicalDesignerName(designer.name);
+  for (const row of state.hours || []) row.designer = canonicalDesignerName(row.designer);
+  for (const row of state.holidays || []) row.designer = canonicalDesignerName(row.designer);
+  return state;
+};
+const canonicalizeBreakdownRecords = records => {
+  for (const row of records || []) row.designer = canonicalDesignerName(row.designer);
+  return records;
+};
 const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
 const defaultTeams = () => [
   { id: "my-team", name: "My Team", designer_ids: [] },
@@ -62,7 +80,7 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
 
   if (path === "/api/data" && method === "GET") {
     const data = await readRequired(stateRef, "Tracker data");
-    const result = clone(data);
+    const result = canonicalizeStateNames(clone(data));
     ensureTeams(result);
     delete result.updatedAt;
     return result;
@@ -72,19 +90,19 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
 
   if (path === "/api/breakdowns" && method === "GET") {
     const snapshot = await getDoc(breakdownRef);
-    return snapshot.exists() ? { records: clone(snapshot.data().records || []) } : { records: [] };
+    return snapshot.exists() ? { records: canonicalizeBreakdownRecords(clone(snapshot.data().records || [])) } : { records: [] };
   }
 
   const body = parseBody(options);
 
   if (path === "/api/designers" && method === "POST") {
-    const name = cleanName(body.name);
+    const name = canonicalDesignerName(body.name);
     if (name.length < 3 || name.length > 80) throw new Error("Enter a valid designer name.");
     let saved;
     await runTransaction(db, async transaction => {
       const snapshot = await transaction.get(stateRef);
       if (!snapshot.exists()) throw new Error("Tracker data has not been migrated yet.");
-      const state = clone(snapshot.data());
+      const state = canonicalizeStateNames(clone(snapshot.data()));
       const existing = state.designers.find(item => item.name.toLowerCase() === name.toLowerCase());
       saved = existing || {
         id: Math.max(0, ...state.designers.map(item => Number(item.id) || 0)) + 1,
@@ -103,7 +121,7 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
     await runTransaction(db, async transaction => {
       const snapshot = await transaction.get(stateRef);
       if (!snapshot.exists()) throw new Error("Tracker data has not been migrated yet.");
-      const state = clone(snapshot.data());
+      const state = canonicalizeStateNames(clone(snapshot.data()));
       ensureTeams(state);
       const action = String(body.action || "");
       const teamId = String(body.teamId || "");
@@ -145,7 +163,7 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
     await runTransaction(db, async transaction => {
       const snapshot = await transaction.get(stateRef);
       if (!snapshot.exists()) throw new Error("Tracker data has not been migrated yet.");
-      const state = clone(snapshot.data());
+      const state = canonicalizeStateNames(clone(snapshot.data()));
       const matched = state.designers.find(item => item.name.toLowerCase() === designer.toLowerCase());
       if (!matched) throw new Error("Designer not found.");
       state.holidays = (state.holidays || []).filter(item =>
@@ -170,7 +188,7 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
     await runTransaction(db, async transaction => {
       const snapshot = await transaction.get(stateRef);
       if (!snapshot.exists()) throw new Error("Tracker data has not been migrated yet.");
-      const state = clone(snapshot.data());
+      const state = canonicalizeStateNames(clone(snapshot.data()));
       const byName = new Map(state.designers.map(item => [item.name.toLowerCase(), item]));
       const imported = [];
       const skipped = [];
@@ -214,9 +232,9 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
     let result;
     await runTransaction(db, async transaction => {
       const snapshot = await transaction.get(breakdownRef);
-      const records = snapshot.exists() ? clone(snapshot.data().records || []) : [];
+      const records = snapshot.exists() ? canonicalizeBreakdownRecords(clone(snapshot.data().records || [])) : [];
       for (const raw of incoming) {
-        const designer = cleanName(raw?.designer);
+        const designer = canonicalDesignerName(raw?.designer);
         const week = cleanName(raw?.week);
         if (!designer || !validDate(week)) continue;
         const record = {
