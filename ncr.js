@@ -116,8 +116,12 @@ async function loadNcrData(silent=false){
     ncrLoaded=true;renderNcr();
     if(!silent&&ncrState.records.length)showToast('NCR tracker refreshed');
   }catch(e){
-    if(!silent)showToast('NCR data could not be loaded');
-    console.warn(e);
+    const message=e?.message||'NCR data could not be loaded';
+    const root=document.getElementById('ncrRoot');
+    if(root)root.innerHTML=`<div class="ncr-empty-state"><h2>NCR Tracker</h2><p><strong>NCR data could not be loaded.</strong></p><p class="ncr-small">${escapeHtml(message)}</p><button type="button" class="secondary" id="ncrRetryBtn">Retry</button></div>`;
+    document.getElementById('ncrRetryBtn')?.addEventListener('click',()=>loadNcrData(false));
+    if(!silent)showToast(message);
+    console.warn('NCR load failed',e);
   }finally{ncrLoading=false}
 }
 
