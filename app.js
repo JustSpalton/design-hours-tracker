@@ -126,5 +126,34 @@ document.getElementById('refreshBtn').addEventListener('click',()=>loadData());
 document.getElementById('unlockBtn').addEventListener('click',async()=>{if(editorKey){editorKey='';sessionStorage.removeItem('designHoursEditorKey');setEditingUI();showToast('Editing locked');return}const pin=prompt('Enter the editor PIN');if(!pin)return;const old=editorKey;editorKey=pin;try{await api('/api/auth',{method:'POST'});sessionStorage.setItem('designHoursEditorKey',editorKey);setEditingUI();showToast('Editing unlocked')}catch(e){editorKey=old;alert(e.message)}});
 document.getElementById('addDesignerBtn').addEventListener('click',async()=>{const name=prompt('New designer name');if(!name)return;try{await api('/api/designers',{method:'POST',body:JSON.stringify({name})});await loadData(true);selectedDesigner=name.replace(/\s+/g,' ').trim();renderAll();showToast(`${selectedDesigner} added`)}catch(e){alert(e.message)}});
 document.getElementById('importFiles').addEventListener('change',e=>{importMany([...e.target.files]);e.target.value='' });
-const dz=document.getElementById('dropZone');['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();if(editorKey)dz.classList.add('drag')}));['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();dz.classList.remove('drag')}));dz.addEventListener('drop',e=>{if(editorKey)importMany([...(e.dataTransfer?.files||[])])});document.addEventListener('dragover',e=>{if(e.dataTransfer?.files?.length)e.preventDefault()});document.addEventListener('drop',e=>{if(e.dataTransfer?.files?.length&&!dz.contains(e.target))e.preventDefault()});
+
+let excelDragDepth=0;
+function hasDraggedFiles(e){return Array.from(e.dataTransfer?.types||[]).includes('Files')}
+function clearExcelDrag(){excelDragDepth=0;document.body.classList.remove('excel-drag-active')}
+document.addEventListener('dragenter',e=>{
+  if(!hasDraggedFiles(e))return;
+  e.preventDefault();
+  excelDragDepth++;
+  document.body.classList.add('excel-drag-active');
+});
+document.addEventListener('dragover',e=>{
+  if(!hasDraggedFiles(e))return;
+  e.preventDefault();
+  if(e.dataTransfer)e.dataTransfer.dropEffect='copy';
+  document.body.classList.add('excel-drag-active');
+});
+document.addEventListener('dragleave',e=>{
+  if(!hasDraggedFiles(e))return;
+  excelDragDepth=Math.max(0,excelDragDepth-1);
+  if(!excelDragDepth)document.body.classList.remove('excel-drag-active');
+});
+document.addEventListener('drop',e=>{
+  if(!hasDraggedFiles(e))return;
+  e.preventDefault();
+  clearExcelDrag();
+  const files=[...(e.dataTransfer?.files||[])];
+  if(!editorKey){showToast('Editing is locked');return}
+  importMany(files);
+});
+window.addEventListener('blur',clearExcelDrag);
 setEditingUI();loadData(true);setInterval(()=>loadData(true),30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadData(true)});
