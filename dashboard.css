@@ -32,3 +32,18 @@ body.dashboard-home .detail{border:0;background:transparent}
 .spark-cell{width:130px}.designer-spark{display:block;width:118px;height:34px;border-radius:5px;overflow:hidden}.spark-band-low{fill:#fdecec}.spark-band-mid{fill:#fff4d5}.spark-band-high{fill:#eaf6ee}.spark-line{stroke:#333}.spark-dot{fill:var(--red)}.spark-empty,.mix-empty{color:#aaa}
 .mix-percent{display:flex;align-items:center;gap:8px;min-width:94px}.mix-percent>div{display:flex;align-items:baseline;gap:3px}.mix-percent strong{font-size:12px}.mix-percent span{font-size:9px;color:var(--muted);font-weight:800;text-transform:uppercase}
 @media(max-width:900px){.dashboard-readability-row{grid-template-columns:1fr}}
+
+.workload-badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:850;white-space:nowrap}
+.workload-badge small{font-size:9px;font-weight:800;opacity:.78}
+.workload-balanced{background:#e7f5ec;color:#146b3a}
+.workload-high{background:#fff1d6;color:#8a5a00}
+.workload-low{background:#eef2f6;color:#4b5563}
+.workload-none{background:#f2f2f2;color:#888}
+.dashboard-drill-point{cursor:pointer;outline:none}.dashboard-drill-point:hover,.dashboard-drill-point:focus{stroke:#fff;stroke-width:2;filter:drop-shadow(0 0 2px rgba(0,0,0,.35))}
+.dashboard-drill-modal{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:70;padding:28px;overflow:auto}
+.dashboard-drill-modal[hidden]{display:none}
+.dashboard-drill-shell{max-width:900px;margin:40px auto;background:#fff;border:3px solid var(--red);border-radius:12px;overflow:hidden}
+.dashboard-drill-head{padding:16px 18px;border-bottom:2px solid var(--red);display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.dashboard-drill-head h2{margin:3px 0 3px;font-size:22px}.dashboard-drill-head p{margin:0;font-size:11px;color:var(--muted)}
+.dashboard-drill-table{padding:8px 16px 16px;overflow:auto}.dashboard-drill-person{cursor:pointer}.dashboard-drill-person:hover{background:#fff5f5}
+@media(max-width:650px){.dashboard-drill-modal{padding:10px}.dashboard-drill-shell{margin:10px auto}.dashboard-drill-head{flex-direction:column}.dashboard-drill-head button{width:100%}}
