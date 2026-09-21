@@ -6,9 +6,48 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function accessPath() {
+      return /databases/$(database)/documents/accessSessions/$(request.auth.uid);
+    }
+
+    function hasTrackerAccess() {
+      return signedIn()
+        && exists(accessPath())
+        && get(accessPath()).data.verified == true
+        && get(accessPath()).data.expiresAt > request.time;
+    }
+
+    match /accessSessions/{uid} {
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['pin', 'verified', 'expiresAt'])
+        && request.resource.data.pin is string
+        && request.resource.data.pin.matches('^[0-9]{4}$')
+        && request.resource.data.pin == get(/databases/$(database)/documents/tracker/security).data.pin
+        && request.resource.data.verified == true
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.expiresAt <= request.time + duration.value(12, 'h');
+
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && resource.data.verified == true
+        && resource.data.expiresAt > request.time
+        && request.resource.data.keys().hasOnly(['verified', 'expiresAt'])
+        && request.resource.data.verified == true
+        && request.resource.data.expiresAt == resource.data.expiresAt;
+
+      allow delete: if signedIn() && request.auth.uid == uid;
+      allow read: if false;
+    }
+
+    match /tracker/security {
+      allow read, write: if false;
+    }
+
     match /tracker/state {
-      allow read: if signedIn();
-      allow create, update: if signedIn()
+      allow read: if hasTrackerAccess();
+      allow create, update: if hasTrackerAccess()
         && request.resource.data.keys().hasOnly([
           'designers', 'hours', 'holidays', 'holidayReady', 'importLog', 'teams', 'updatedAt'
         ])
@@ -26,8 +65,8 @@ service cloud.firestore {
     }
 
     match /tracker/breakdowns {
-      allow read: if signedIn();
-      allow create, update: if signedIn()
+      allow read: if hasTrackerAccess();
+      allow create, update: if hasTrackerAccess()
         && request.resource.data.keys().hasOnly(['records', 'updatedAt'])
         && request.resource.data.records is list
         && request.resource.data.records.size() <= 5000;
