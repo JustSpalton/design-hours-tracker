@@ -18,24 +18,55 @@ service cloud.firestore {
     }
 
     match /accessSessions/{uid} {
-      allow create: if signedIn()
+      allow create, update: if signedIn()
         && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(['pin', 'verified', 'expiresAt'])
         && request.resource.data.pin is string
-        && request.resource.data.pin.matches('^[0-9]{4}$')
+        && request.resource.data.pin.matches('^[0-9]{4}
+
+    match /tracker/security {
+      allow read, write: if false;
+    }
+
+    match /tracker/state {
+      allow read: if hasTrackerAccess();
+      allow create, update: if hasTrackerAccess()
+        && request.resource.data.keys().hasOnly([
+          'designers', 'hours', 'holidays', 'holidayReady', 'importLog', 'teams', 'updatedAt'
+        ])
+        && request.resource.data.designers is list
+        && request.resource.data.designers.size() <= 100
+        && request.resource.data.hours is list
+        && request.resource.data.hours.size() <= 5000
+        && request.resource.data.holidays is list
+        && request.resource.data.holidays.size() <= 2000
+        && request.resource.data.importLog is list
+        && request.resource.data.importLog.size() <= 100
+        && request.resource.data.teams is list
+        && request.resource.data.teams.size() <= 50;
+      allow delete: if false;
+    }
+
+    match /tracker/breakdowns {
+      allow read: if hasTrackerAccess();
+      allow create, update: if hasTrackerAccess()
+        && request.resource.data.keys().hasOnly(['records', 'updatedAt'])
+        && request.resource.data.records is list
+        && request.resource.data.records.size() <= 5000;
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+)
         && request.resource.data.pin == get(/databases/$(database)/documents/tracker/security).data.pin
         && request.resource.data.verified == true
         && request.resource.data.expiresAt is timestamp
         && request.resource.data.expiresAt > request.time
         && request.resource.data.expiresAt <= request.time + duration.value(12, 'h');
-
-      allow update: if signedIn()
-        && request.auth.uid == uid
-        && resource.data.verified == true
-        && resource.data.expiresAt > request.time
-        && request.resource.data.keys().hasOnly(['verified', 'expiresAt'])
-        && request.resource.data.verified == true
-        && request.resource.data.expiresAt == resource.data.expiresAt;
 
       allow delete: if signedIn() && request.auth.uid == uid;
       allow read: if false;
