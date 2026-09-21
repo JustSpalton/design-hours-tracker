@@ -1,5 +1,6 @@
 let state={designers:[],hours:[],holidays:[],holidayReady:false,importLog:[],teams:[]};
 let selectedWeek=null, selectedDesigner=null;
+let currentAppTab='design';
 let editorKey=sessionStorage.getItem('designHoursEditorKey')||'';
 
 function norm(s){return String(s??'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ')}
@@ -143,10 +144,10 @@ document.getElementById('weekSelect').addEventListener('change',e=>selectTracker
 document.getElementById('previousWeekBtn').addEventListener('click',()=>moveTrackerWeek(-1));
 document.getElementById('nextWeekBtn').addEventListener('click',()=>moveTrackerWeek(1));
 document.getElementById('designerSearch').addEventListener('input',renderDesignerList);
-document.getElementById('refreshBtn').addEventListener('click',()=>loadData());
+document.getElementById('refreshBtn').addEventListener('click',()=>{if(currentAppTab==='ncr'&&typeof loadNcrData==='function')loadNcrData();else loadData()});
 document.getElementById('unlockBtn').addEventListener('click',()=>{if(editorKey){editorKey='';sessionStorage.removeItem('designHoursEditorKey');setEditingUI();showToast('Editing locked');return}editorKey='open-editing';sessionStorage.setItem('designHoursEditorKey',editorKey);setEditingUI();showToast('Editing unlocked')});
 document.getElementById('addDesignerBtn').addEventListener('click',async()=>{const name=prompt('New designer name');if(!name)return;try{await api('/api/designers',{method:'POST',body:JSON.stringify({name})});await loadData(true);selectedDesigner=name.replace(/\s+/g,' ').trim();renderAll();showToast(`${selectedDesigner} added`)}catch(e){alert(e.message)}});
-document.getElementById('importFiles').addEventListener('change',e=>{importMany([...e.target.files]);e.target.value='' });
+document.getElementById('importFiles').addEventListener('change',e=>{const files=[...e.target.files];if(currentAppTab==='ncr'&&typeof importNcrMany==='function')importNcrMany(files);else importMany(files);e.target.value='' });
 
 let excelDragDepth=0;
 function hasDraggedFiles(e){return Array.from(e.dataTransfer?.types||[]).includes('Files')}
@@ -174,7 +175,7 @@ document.addEventListener('drop',e=>{
   clearExcelDrag();
   const files=[...(e.dataTransfer?.files||[])];
   if(!editorKey){showToast('Editing is locked');return}
-  importMany(files);
+  if(currentAppTab==='ncr'&&typeof importNcrMany==='function')importNcrMany(files);else importMany(files);
 });
 window.addEventListener('blur',clearExcelDrag);
 
@@ -223,6 +224,9 @@ async function lockTracker(){
   try{await api('/api/lock',{method:'POST'})}catch(_){}
   state={designers:[],hours:[],holidays:[],holidayReady:false,importLog:[],teams:[]};
   breakdownState={records:[]};
+  if(typeof ncrState!=='undefined')ncrState={records:[],sourceFile:'',importedAt:null};
+  if(typeof ncrLoaded!=='undefined')ncrLoaded=false;
+  currentAppTab='design';
   selectedWeek=null;selectedDesigner=null;
   showTrackerLock();
 }
