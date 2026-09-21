@@ -1,5 +1,5 @@
 let breakdownState={records:[]};
-let breakdownView='status';
+let breakdownView='product';
 let breakdownMetric='jobs';
 
 function breakdownInitials(name){return String(name||'').trim().split(/\s+/).filter(Boolean).map(x=>x[0]).join('').toUpperCase()}
@@ -114,7 +114,7 @@ function appendBreakdownCard(){
   const card=document.createElement('div');card.className='trend-card work-mix-card';card.id='workMixCard';
   const period=typeof rangeLabel==='function'?rangeLabel():`W/C ${fmtDate(selectedWeek)}`;
   const coverage=breakdownHourCoverage(selectedDesigner,countField);
-  card.innerHTML=`<div class="trend-head work-mix-head"><div><h3>Work mix</h3><span>${breakdownMetric==='hours'?'Design hours':'Number of jobs'} • ${escapeHtml(period)}</span></div><div class="mix-controls"><div class="mix-tabs"><button type="button" data-mix="status" class="${breakdownView==='status'?'active':''}">Job type</button><button type="button" data-mix="product" class="${breakdownView==='product'?'active':''}">Product</button></div><div class="mix-tabs metric-tabs"><button type="button" data-metric="jobs" class="${breakdownMetric==='jobs'?'active':''}">Jobs</button><button type="button" data-metric="hours" class="${breakdownMetric==='hours'?'active':''}">Hours</button></div></div></div><div class="work-mix-body">${barRows(items,breakdownMetric,coverage)}</div>`;
+  card.innerHTML=`<div class="trend-head work-mix-head"><div><h3>Work mix</h3><span>${breakdownMetric==='hours'?'Design hours':'Number of jobs'} • ${escapeHtml(period)}</span></div><div class="mix-controls"><div class="mix-tabs"><button type="button" data-mix="product" class="${breakdownView==='product'?'active':''}">Job type</button><button type="button" data-mix="status" class="${breakdownView==='status'?'active':''}">Work category</button></div><div class="mix-tabs metric-tabs"><button type="button" data-metric="jobs" class="${breakdownMetric==='jobs'?'active':''}">Jobs</button><button type="button" data-metric="hours" class="${breakdownMetric==='hours'?'active':''}">Hours</button></div></div></div><div class="work-mix-body">${barRows(items,breakdownMetric,coverage)}</div>`;
   const weeklyTrend=body.querySelector('.trend-card:not(.holiday-card)');if(weeklyTrend)body.insertBefore(card,weeklyTrend);else body.appendChild(card);
   card.querySelectorAll('[data-mix]').forEach(btn=>btn.addEventListener('click',()=>{breakdownView=btn.dataset.mix;renderDetail()}));
   card.querySelectorAll('[data-metric]').forEach(btn=>btn.addEventListener('click',()=>{breakdownMetric=btn.dataset.metric;renderDetail()}));
