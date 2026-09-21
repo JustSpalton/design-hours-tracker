@@ -15,6 +15,52 @@ function showError(msg=''){const e=document.getElementById('status');e.textConte
 function isExcelFile(file){return /\.(xls|xlsx|xlsm|xlsb)$/i.test(String(file?.name||''))}
 function cellText(cell){return String(cell?.w??cell?.v??'').trim()}
 function numericHours(cell){if(!cell)return null;const formatted=cellText(cell);if(/^sum\s*=/i.test(formatted))return null;const raw=cell.v;if(typeof raw==='number'&&Number.isFinite(raw))return raw;const n=Number(String(raw??formatted).replace(/,/g,'').trim());return Number.isFinite(n)?n:null}
+function cellISODate(cell){
+  if(!cell)return null;
+  const raw=cell.v;
+  if(raw instanceof Date&&!isNaN(raw)){return isoDate(new Date(Date.UTC(raw.getFullYear(),raw.getMonth(),raw.getDate())))}
+  if(typeof raw==='number'&&Number.isFinite(raw)&&raw>20000&&raw<80000){
+    try{const p=XLSX.SSF.parse_date_code(raw);if(p&&p.y&&p.m&&p.d)return isoDate(new Date(Date.UTC(p.y,p.m-1,p.d)))}catch(_){}
+  }
+  const text=cellText(cell).replace(/\s+/g,' ').trim();
+  let m=text.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})(?:\s|$)/);
+  if(m){let y=Number(m[3]);if(y<100)y+=2000;const d=new Date(Date.UTC(y,Number(m[2])-1,Number(m[1])));if(!isNaN(d)&&d.getUTCDate()===Number(m[1])&&d.getUTCMonth()===Number(m[2])-1)return isoDate(d)}
+  m=text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\s|$)/);
+  if(m){const d=new Date(Date.UTC(Number(m[1]),Number(m[2])-1,Number(m[3])));if(!isNaN(d))return isoDate(d)}
+  return null;
+}
+function findHeaderColumn(ws,range,patterns,maxRows=40){
+  for(let r=range.s.r;r<=Math.min(range.e.r,range.s.r+maxRows);r++)for(let col=range.s.c;col<=range.e.c;col++){
+    const t=cellText(ws[XLSX.utils.encode_cell({r,c:col})]).replace(/\s+/g,' ').trim();
+    if(patterns.some(re=>re.test(t)))return col;
+  }
+  return null;
+}
+function dateEnquiryDoneColumn(ws,range){return findHeaderColumn(ws,range,[/^date\s+enquiry\s+done$/i,/^enquiry\s+done\s+date$/i,/^date\s+done$/i],60)}
+function extractDatedHours(wb){
+  const grouped=new Map(),ignored=new Set();let datedRows=0;
+  for(const sheetName of wb.SheetNames){
+    const ws=wb.Sheets[sheetName];if(!ws||!ws['!ref'])continue;
+    const range=XLSX.utils.decode_range(ws['!ref']),dateCol=dateEnquiryDoneColumn(ws,range);
+    if(dateCol==null)continue;
+    const {estimatorCol,hoursCol}=getReportColumns(ws,range),starts=[];
+    for(let r=range.s.r;r<=range.e.r;r++){const name=sectionNameAtRow(ws,r,range);if(name)starts.push({r,name})}
+    for(let i=0;i<starts.length;i++){
+      const start=starts[i],end=i+1<starts.length?starts[i+1].r-1:range.e.r;
+      const designer=knownDesigner(start.name);if(!designer){ignored.add(start.name);continue}
+      for(let r=start.r+1;r<=end;r++){
+        const rowEstimator=cellText(ws[XLSX.utils.encode_cell({r,c:estimatorCol})]);
+        if(rowEstimator&&norm(rowEstimator)!==norm(start.name))continue;
+        const date=cellISODate(ws[XLSX.utils.encode_cell({r,c:dateCol})]);if(!date)continue;
+        const hours=numericHours(ws[XLSX.utils.encode_cell({r,c:hoursCol})]);if(hours==null||hours<0||hours>1000)continue;
+        const week=weekForDate(date),key=`${week}|${norm(designer)}`,previous=grouped.get(key);
+        grouped.set(key,{week,name:designer,hours:Math.round(((previous?.hours||0)+hours)*100)/100});
+        datedRows++;
+      }
+    }
+  }
+  return {records:[...grouped.values()],ignored:[...ignored],datedRows};
+}
 function getReportColumns(ws,range){let estimatorCol=null,hoursCol=null;for(let r=range.s.r;r<=Math.min(range.e.r,range.s.r+15);r++){for(let c=range.s.c;c<=range.e.c;c++){const txt=cellText(ws[XLSX.utils.encode_cell({r,c})]);if(estimatorCol==null&&/^estimator\s*name\s*$/i.test(txt))estimatorCol=c;if(hoursCol==null&&/^est\.?\s*time\s*est\s*$/i.test(txt))hoursCol=c}}return {estimatorCol:estimatorCol??8,hoursCol:hoursCol??9}}
 function sectionNameAtRow(ws,r,range){for(let c=range.s.c;c<=range.e.c;c++){const txt=cellText(ws[XLSX.utils.encode_cell({r,c})]);if(!/^estimator\s*name\s*:/i.test(txt))continue;const inline=txt.replace(/^estimator\s*name\s*:\s*/i,'').trim();if(inline)return inline.replace(/\s+/g,' ');for(let n=c+1;n<=Math.min(range.e.c,c+3);n++){const next=cellText(ws[XLSX.utils.encode_cell({r,c:n})]).replace(/\s+/g,' ').trim();if(next)return next}}return null}
 function findEstimatorSections(wb){const sections=[];for(const sheetName of wb.SheetNames){const ws=wb.Sheets[sheetName];if(!ws||!ws['!ref'])continue;const range=XLSX.utils.decode_range(ws['!ref']);const {estimatorCol,hoursCol}=getReportColumns(ws,range);const starts=[];for(let r=range.s.r;r<=range.e.r;r++){const name=sectionNameAtRow(ws,r,range);if(name)starts.push({r,name})}for(let i=0;i<starts.length;i++){const start=starts[i],end=i+1<starts.length?starts[i+1].r-1:range.e.r;let sum=0,count=0;for(let r=start.r+1;r<=end;r++){const rowName=cellText(ws[XLSX.utils.encode_cell({r,c:estimatorCol})]);if(norm(rowName)!==norm(start.name))continue;const v=numericHours(ws[XLSX.utils.encode_cell({r,c:hoursCol})]);if(v==null||v<0||v>1000)continue;sum+=v;count++}if(!count){sum=0;for(let r=start.r+1;r<=end;r++){const v=numericHours(ws[XLSX.utils.encode_cell({r,c:hoursCol})]);if(v==null||v<0||v>1000)continue;sum+=v;count++}}if(count)sections.push({name:start.name,hours:Math.round(sum*100)/100,count})}}return sections}
@@ -38,8 +84,44 @@ function renderDetail(){const box=document.getElementById('detailPanel');if(!sel
 function renderLog(){const box=document.getElementById('importLog');if(!state.importLog?.length){box.innerHTML='<div class="empty-state">No imports recorded yet.</div>';return}box.innerHTML=`<table><thead><tr><th>Week</th><th>File</th><th class="right">Designers saved</th><th>Imported</th></tr></thead><tbody>${state.importLog.map(x=>`<tr><td>${fmtDate(x.week)}</td><td>${escapeHtml(x.source_file)}</td><td class="right">${Number(x.rows_imported||0)}</td><td>${new Date(x.imported_at).toLocaleString('en-GB')}</td></tr>`).join('')}</tbody></table>`}
 function renderAll(){renderWeeks();renderStats();renderDesignerList();renderDetail();renderLog();setEditingUI()}
 async function setHoliday(date,holiday){if(!editorKey){showToast('Unlock editing first');return}if(!state.holidayReady){showToast('Holiday tracking is not ready yet');return}try{await api('/api/holidays',{method:'POST',body:JSON.stringify({designer:selectedDesigner,date,holiday})});await loadData(true);showToast(holiday?`Holiday added for ${fmtDate(date)}`:`Holiday removed for ${fmtDate(date)}`)}catch(e){alert(e.message)}}
-async function importEstimatorFile(file){if(!editorKey)throw new Error('Unlock editing before importing.');if(!isExcelFile(file))throw new Error(`${file.name}: unsupported Excel file.`);const wd=parseWeekFilename(file.name);if(!wd)throw new Error(`${file.name}: no week date found in the filename.`);if(wd.getUTCDay()!==1)throw new Error(`${file.name}: the date in the filename is not a Monday.`);const buf=await file.arrayBuffer();let wb;try{wb=XLSX.read(buf,{type:'array',cellFormula:true,cellStyles:true,cellNF:true,cellText:true})}catch(e){throw new Error(`${file.name}: Excel could not be read (${e.message}).`)}const sections=findEstimatorSections(wb);if(!sections.length)throw new Error(`${file.name}: no Estimator Name sections with design hours were found.`);const grouped=new Map(),ignored=[];for(const sec of sections){const designer=knownDesigner(sec.name);if(!designer){ignored.push(sec.name);continue}const k=norm(designer);grouped.set(k,{name:designer,hours:Math.round(((grouped.get(k)?.hours||0)+sec.hours)*100)/100})}const records=[...grouped.values()];if(!records.length)throw new Error(`${file.name}: none of the estimator names are in this tracker.`);const week=isoDate(wd);const result=await api('/api/import',{method:'POST',body:JSON.stringify({week,sourceFile:file.name,records})});selectedWeek=week;if(result.imported?.length)selectedDesigner=result.imported[0].name;return {imported:result.imported?.length||0,ignored:(result.skipped?.length||0)+ignored.length}}
-async function importMany(files){const excel=[...files].filter(isExcelFile);if(!excel.length){showToast('Drop an Excel file here');return}let imported=0,ignored=0,errors=[];for(const f of excel){try{const r=await importEstimatorFile(f);imported+=r.imported;ignored+=r.ignored}catch(e){errors.push(e.message)}}await loadData(true);const bits=[];if(imported)bits.push(`${imported} designer total${imported===1?'':'s'} saved`);if(ignored)bits.push(`${ignored} other designer${ignored===1?'':'s'} skipped`);if(errors.length)bits.push(`${errors.length} file${errors.length===1?'':'s'} failed`);showToast(bits.join(' • ')||'No data imported');if(errors.length)alert(errors.join('\n'))}
+async function importEstimatorFile(file){
+  if(!editorKey)throw new Error('Unlock editing before importing.');
+  if(!isExcelFile(file))throw new Error(`${file.name}: unsupported Excel file.`);
+  const buf=await file.arrayBuffer();let wb;
+  try{wb=XLSX.read(buf,{type:'array',cellDates:true,cellFormula:true,cellStyles:true,cellNF:true,cellText:true})}
+  catch(e){throw new Error(`${file.name}: Excel could not be read (${e.message}).`)}
+
+  const dated=extractDatedHours(wb);
+  if(dated.records.length){
+    const byWeek=new Map();
+    for(const row of dated.records){if(!byWeek.has(row.week))byWeek.set(row.week,[]);byWeek.get(row.week).push({name:row.name,hours:row.hours})}
+    let imported=0,skipped=0;const weeks=[...byWeek.keys()].sort();
+    for(const week of weeks){
+      const result=await api('/api/import',{method:'POST',body:JSON.stringify({week,sourceFile:file.name,records:byWeek.get(week)})});
+      imported+=result.imported?.length||0;skipped+=result.skipped?.length||0;
+    }
+    if(weeks.length)selectedWeek=weeks.at(-1);
+    if(dated.records.length)selectedDesigner=dated.records.at(-1).name;
+    return {imported,ignored:skipped+dated.ignored.length,weeks:weeks.length,mode:'dated'};
+  }
+
+  const wd=parseWeekFilename(file.name);
+  if(!wd)throw new Error(`${file.name}: no Date Enquiry Done values were found and no week date was found in the filename.`);
+  if(wd.getUTCDay()!==1)throw new Error(`${file.name}: the date in the filename is not a Monday.`);
+  const sections=findEstimatorSections(wb);
+  if(!sections.length)throw new Error(`${file.name}: no Estimator Name sections with design hours were found.`);
+  const grouped=new Map(),ignored=[];
+  for(const sec of sections){
+    const designer=knownDesigner(sec.name);if(!designer){ignored.push(sec.name);continue}
+    const k=norm(designer);grouped.set(k,{name:designer,hours:Math.round(((grouped.get(k)?.hours||0)+sec.hours)*100)/100});
+  }
+  const records=[...grouped.values()];if(!records.length)throw new Error(`${file.name}: none of the estimator names are in this tracker.`);
+  const week=isoDate(wd);
+  const result=await api('/api/import',{method:'POST',body:JSON.stringify({week,sourceFile:file.name,records})});
+  selectedWeek=week;if(result.imported?.length)selectedDesigner=result.imported[0].name;
+  return {imported:result.imported?.length||0,ignored:(result.skipped?.length||0)+ignored.length,weeks:1,mode:'filename'};
+}
+async function importMany(files){const excel=[...files].filter(isExcelFile);if(!excel.length){showToast('Drop an Excel file here');return}let imported=0,ignored=0,weeks=0,errors=[];for(const f of excel){try{const r=await importEstimatorFile(f);imported+=r.imported;ignored+=r.ignored;weeks+=r.weeks||0}catch(e){errors.push(e.message)}}await loadData(true);const bits=[];if(imported)bits.push(`${imported} designer-week total${imported===1?'':'s'} saved`);if(weeks)bits.push(`${weeks} week${weeks===1?'':'s'} detected`);if(ignored)bits.push(`${ignored} other designer${ignored===1?'':'s'} skipped`);if(errors.length)bits.push(`${errors.length} file${errors.length===1?'':'s'} failed`);showToast(bits.join(' • ')||'No data imported');if(errors.length)alert(errors.join('\n'))}
 
 document.getElementById('weekSelect').addEventListener('change',e=>{selectedWeek=e.target.value;renderStats();renderDesignerList();renderDetail()});
 document.getElementById('designerSearch').addEventListener('input',renderDesignerList);
