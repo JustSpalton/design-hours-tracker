@@ -5,11 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Design Hours Tracker</title>
 <script src="/vendor/xlsx.full.min.js?v=20260921-1"></script>
-<link rel="stylesheet" href="/styles.css?v=20260921-10" />
+<link rel="stylesheet" href="/styles.css?v=20260921-11" />
 <link rel="stylesheet" href="/range.css?v=20260921-1" />
 <link rel="stylesheet" href="/breakdown.css?v=20260921-1" />
-<link rel="stylesheet" href="/team-report.css?v=20260921-10" />
-<link rel="stylesheet" href="/dashboard.css?v=20260921-10" />
+<link rel="stylesheet" href="/team-report.css?v=20260921-11" />
+<link rel="stylesheet" href="/dashboard.css?v=20260921-11" />
+<link rel="stylesheet" href="/ncr.css?v=20260921-11" />
 </head>
 <body class="tracker-locked">
 <div class="site-lock" id="siteLock">
@@ -34,7 +35,11 @@
     <button class="secondary" id="siteLockBtn">Lock</button>
   </div>
 </header>
-<main>
+<nav class="app-tabs" id="appTabs" aria-label="Tracker sections">
+  <button type="button" class="app-tab active" id="designHoursTab" data-app-tab="design">Design Hours</button>
+  <button type="button" class="app-tab" id="ncrTrackerTab" data-app-tab="ncr">NCR Tracker</button>
+</nav>
+<main id="designApp">
   <div class="status" id="status"></div>
   <div class="toolbar">
     <div class="panel weekbox">
@@ -68,15 +73,19 @@
     <div class="section-body" id="importLog"></div>
   </div>
 </main>
+<main id="ncrApp" hidden>
+  <div id="ncrRoot"><div class="ncr-loading">NCR Tracker</div></div>
+</main>
 <div class="page-drop-overlay" id="pageDropOverlay"><div><strong>Drop Excel to import</strong><span>Weekly or annual estimator files</span></div></div>
 <div class="toast" id="toast"></div>
 <script>sessionStorage.setItem('designHoursEditorKey','open-editing');</script>
-<script src="/firebase-config.js?v=20260921-10"></script>
-<script type="module" src="/firebase-client.js?v=20260921-10"></script>
-<script src="/app.js?v=20260921-10"></script>
-<script src="/range.js?v=20260921-10"></script>
-<script src="/breakdown.js?v=20260921-10"></script>
-<script src="/team-report.js?v=20260921-10"></script>
-<script src="/dashboard.js?v=20260921-10"></script>
+<script src="/firebase-config.js?v=20260921-11"></script>
+<script type="module" src="/firebase-client.js?v=20260921-11"></script>
+<script src="/app.js?v=20260921-11"></script>
+<script src="/range.js?v=20260921-11"></script>
+<script src="/breakdown.js?v=20260921-11"></script>
+<script src="/team-report.js?v=20260921-11"></script>
+<script src="/dashboard.js?v=20260921-11"></script>
+<script src="/ncr.js?v=20260921-11"></script>
 </body>
 </html>
