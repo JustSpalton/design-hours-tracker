@@ -9,8 +9,6 @@ import {
   setDoc,
   deleteDoc,
   Timestamp,
-  collection,
-  getDocs,
   writeBatch
 } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
 
@@ -24,7 +22,7 @@ const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
 const stateRef = doc(db, "tracker", "state");
 const breakdownRef = doc(db, "tracker", "breakdowns");
-const ncrChunksRef = collection(db, "ncrChunks");
+const ncrMetaRef = doc(db, "tracker", "ncrMeta");
 
 window.firebaseReady = (async () => {
   await setPersistence(auth, browserSessionPersistence);
@@ -181,11 +179,18 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
   }
 
   if (path === "/api/ncr" && method === "GET") {
-    const snapshot = await getDocs(ncrChunksRef);
-    const chunks = snapshot.docs.map(item => item.data()).sort((a, b) => Number(a.index || 0) - Number(b.index || 0));
-    const records = chunks.flatMap(item => Array.isArray(item.records) ? item.records : []);
-    const latest = chunks.find(item => item.sourceFile || item.importedAt) || {};
-    return { records, sourceFile: latest.sourceFile || "", importedAt: latest.importedAt || null };
+    const metaSnap = await getDoc(ncrMetaRef);
+    if (!metaSnap.exists()) return { records: [], sourceFile: "", importedAt: null };
+    const meta = metaSnap.data() || {};
+    const chunkCount = Math.max(0, Math.min(50, Number(meta.chunkCount || 0)));
+    const refs = Array.from({ length: chunkCount }, (_, index) =>
+      doc(db, "ncrChunks", `chunk-${String(index).padStart(3, "0")}`)
+    );
+    const snapshots = await Promise.all(refs.map(ref => getDoc(ref)));
+    const records = snapshots.flatMap(snapshot =>
+      snapshot.exists() && Array.isArray(snapshot.data().records) ? snapshot.data().records : []
+    );
+    return { records, sourceFile: meta.sourceFile || "", importedAt: meta.importedAt || null };
   }
 
   const body = parseBody(options);
@@ -201,13 +206,19 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
     const chunks = [];
     for (let i = 0; i < records.length; i += chunkSize) chunks.push(records.slice(i, i + chunkSize));
 
-    const existing = await getDocs(ncrChunksRef);
+    const previousMetaSnap = await getDoc(ncrMetaRef);
+    const previousChunkCount = previousMetaSnap.exists()
+      ? Math.max(0, Math.min(50, Number(previousMetaSnap.data()?.chunkCount || 0)))
+      : 0;
     const batch = writeBatch(db);
-    for (const item of existing.docs) batch.delete(item.ref);
+    for (let index = 0; index < previousChunkCount; index++) {
+      batch.delete(doc(db, "ncrChunks", `chunk-${String(index).padStart(3, "0")}`));
+    }
     chunks.forEach((rows, index) => {
       const ref = doc(db, "ncrChunks", `chunk-${String(index).padStart(3, "0")}`);
-      batch.set(ref, { index, sourceFile, importedAt, records: rows });
+      batch.set(ref, { index, records: rows });
     });
+    batch.set(ncrMetaRef, { chunkCount: chunks.length, recordCount: records.length, sourceFile, importedAt });
     await batch.commit();
     return { ok: true, saved: records.length, chunks: chunks.length, sourceFile, importedAt, records };
   }
