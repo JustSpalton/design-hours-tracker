@@ -23,3 +23,12 @@ body.dashboard-home .detail{border:0;background:transparent}
 .dashboard-work-summary strong{font-size:17px;color:var(--ink);margin-left:2px}
 .legend-dot{width:10px;height:10px;border-radius:999px;display:inline-block}.legend-dot.amendment{background:#d71920}.legend-dot.otp{background:#222}
 @media(max-width:650px){.dashboard-section-head{align-items:flex-start;gap:10px;flex-direction:column}.dashboard-metric-toggle{width:100%}.dashboard-metric-toggle button{flex:1}.dashboard-work-summary{align-items:flex-start;flex-direction:column;gap:8px}}
+
+.dashboard-readability-row{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.65fr);gap:12px}
+.dashboard-missing,.hours-band-legend{background:#fff;border:1.5px solid var(--red);border-radius:9px;padding:11px 13px}
+.dashboard-missing{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}.dashboard-missing strong{font-size:11px;text-transform:uppercase;letter-spacing:.04em}.dashboard-missing span{font-size:11px;color:var(--muted);line-height:1.5}.dashboard-missing.has-missing{background:#fff9e9;border-color:#d6a635}.dashboard-missing.complete{background:#f2fbf6;border-color:#7db895}
+.hours-band-legend{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:10px;color:var(--muted)}.hours-band-legend>span{font-weight:850;color:var(--ink);margin-right:2px}.hours-band-legend i{width:18px;height:10px;border-radius:3px;display:inline-block}.hours-band-legend b{font-size:10px;color:var(--ink)}.hours-band-legend em{font-style:normal;margin-left:2px}
+.hours-band{display:inline-block;min-width:48px;text-align:center;border-radius:999px;padding:4px 8px;font-weight:850}.hours-band-low{background:#fdecec;color:#8d1c1c}.hours-band-mid{background:#fff2c9;color:#735700}.hours-band-high{background:#e7f5ec;color:#146b3a}
+.spark-cell{width:130px}.designer-spark{display:block;width:118px;height:34px;border-radius:5px;overflow:hidden}.spark-band-low{fill:#fdecec}.spark-band-mid{fill:#fff4d5}.spark-band-high{fill:#eaf6ee}.spark-line{stroke:#333}.spark-dot{fill:var(--red)}.spark-empty,.mix-empty{color:#aaa}
+.mix-percent{display:flex;align-items:center;gap:8px;min-width:94px}.mix-percent>div{display:flex;align-items:baseline;gap:3px}.mix-percent strong{font-size:12px}.mix-percent span{font-size:9px;color:var(--muted);font-weight:800;text-transform:uppercase}
+@media(max-width:900px){.dashboard-readability-row{grid-template-columns:1fr}}
