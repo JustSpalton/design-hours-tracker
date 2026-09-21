@@ -228,6 +228,7 @@ async function lockTracker(){
   if(typeof ncrLoaded!=='undefined')ncrLoaded=false;
   currentAppTab='design';
   selectedWeek=null;selectedDesigner=null;
+  if(typeof switchAppTab==='function')switchAppTab('design');
   showTrackerLock();
 }
 document.getElementById('siteLockForm').addEventListener('submit',async e=>{
