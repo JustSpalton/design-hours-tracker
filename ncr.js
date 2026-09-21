@@ -1,7 +1,7 @@
 let ncrState={records:[],sourceFile:'',importedAt:null};
 let ncrLoaded=false;
 let ncrLoading=false;
-let ncrFilters={period:'12',search:'',category:'',employee:'',customer:'',status:'all'};
+let ncrFilters={period:'1',search:'',category:'',employee:'',customer:''};
 let selectedNcr=null;
 
 function ncrMoney(value){return new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2}).format(Number(value||0))}
@@ -133,18 +133,15 @@ function ncrPeriodStart(records){
   const latest=ncrLatestDate(records);if(!latest)return '';
   const d=parseISO(latest);d.setUTCMonth(d.getUTCMonth()-Number(ncrFilters.period));return isoDate(d);
 }
-function ncrFiltered(){
-  const all=ncrState.records||[],start=ncrPeriodStart(all);
+function ncrFiltered(ignorePeriod=false){
+  const all=ncrState.records||[],start=ignorePeriod?'':ncrPeriodStart(all);
   const q=norm(ncrFilters.search);
   return all.filter(r=>{
     if(start&&(!r.dateReported||r.dateReported<start))return false;
     if(ncrFilters.category&&r.category!==ncrFilters.category)return false;
     if(ncrFilters.employee&&r.employee!==ncrFilters.employee)return false;
     if(ncrFilters.customer&&r.customer!==ncrFilters.customer)return false;
-    const outstanding=!String(r.investigated||'').trim();
-    if(ncrFilters.status==='open'&&!outstanding)return false;
-    if(ncrFilters.status==='investigated'&&outstanding)return false;
-    if(q&&!norm([r.ncrNo,r.customer,r.site,r.complaint,r.employee,r.approvedBy,r.category,r.finding,r.details,r.fnumber,r.ifo].join(' ')).includes(q))return false;
+    if(q&&!norm([r.ncrNo,r.customer,r.site,r.complaint,r.employee,r.approvedBy,r.category,r.finding,r.details,r.fnumber,r.ifo,r.collectReplace].join(' ')).includes(q))return false;
     return true;
   }).sort((a,b)=>(b.dateReported||'').localeCompare(a.dateReported||'')||String(b.ncrNo).localeCompare(String(a.ncrNo)));
 }
@@ -166,13 +163,26 @@ function ncrMonthly(records){
   return [...map.values()].sort((a,b)=>a.key.localeCompare(b.key));
 }
 function ncrMonthlySvg(data){
-  if(!data.length)return '<div class="ncr-empty">No dated NCRs in this view.</div>';
-  const W=960,H=280,p={l:42,r:18,t:18,b:48},max=Math.max(1,...data.map(x=>x.count));
-  const slot=(W-p.l-p.r)/data.length,bar=Math.max(8,Math.min(36,slot*.58));
-  const y=v=>p.t+(max-v)*(H-p.t-p.b)/max;
-  const grid=Array.from({length:5},(_,i)=>{const v=max*(4-i)/4,yy=p.t+i*(H-p.t-p.b)/4;return `<line x1="${p.l}" y1="${yy}" x2="${W-p.r}" y2="${yy}" stroke="#e5e7eb"/><text x="${p.l-7}" y="${yy+4}" text-anchor="end" font-size="10" fill="#6b7280">${Math.round(v)}</text>`}).join('');
-  const bars=data.map((d,i)=>{const x=p.l+i*slot+(slot-bar)/2,yy=y(d.count),h=H-p.b-yy;return `<g><rect x="${x}" y="${yy}" width="${bar}" height="${h}" rx="3" fill="#d71920"><title>${ncrMonthLabel(d.key)}: ${d.count} NCRs • ${ncrMoney(d.cost)}</title></rect><text x="${x+bar/2}" y="${H-20}" text-anchor="middle" font-size="10" fill="#6b7280">${ncrMonthLabel(d.key)}</text></g>`}).join('');
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Monthly NCR count trend">${grid}${bars}</svg>`;
+  if(!data.length)return '<div class="ncr-empty">No dated NCRs are available for the monthly comparison.</div>';
+  const W=960,H=300,p={l:46,r:72,t:32,b:50};
+  const maxCount=Math.max(1,...data.map(x=>x.count));
+  const maxCost=Math.max(1,...data.map(x=>x.cost));
+  const slot=(W-p.l-p.r)/data.length,bar=Math.max(8,Math.min(32,slot*.46));
+  const yCount=v=>p.t+(maxCount-v)*(H-p.t-p.b)/maxCount;
+  const yCost=v=>p.t+(maxCost-v)*(H-p.t-p.b)/maxCost;
+  let grid='';
+  for(let i=0;i<=4;i++){
+    const yy=p.t+i*(H-p.t-p.b)/4;
+    const count=maxCount*(4-i)/4,cost=maxCost*(4-i)/4;
+    grid+=`<line x1="${p.l}" y1="${yy}" x2="${W-p.r}" y2="${yy}" stroke="#e5e7eb"/><text x="${p.l-7}" y="${yy+4}" text-anchor="end" font-size="10" fill="#6b7280">${Math.round(count)}</text><text x="${W-p.r+7}" y="${yy+4}" text-anchor="start" font-size="10" fill="#6b7280">£${Math.round(cost).toLocaleString('en-GB')}</text>`;
+  }
+  const bars=data.map((d,i)=>{
+    const x=p.l+i*slot+(slot-bar)/2,yy=yCount(d.count),h=H-p.b-yy;
+    return `<g><rect class="ncr-month-bar" x="${x}" y="${yy}" width="${bar}" height="${h}" rx="3"><title>${ncrMonthLabel(d.key)}: ${d.count} NCRs</title></rect><text x="${x+bar/2}" y="${H-20}" text-anchor="middle" font-size="10" fill="#6b7280">${ncrMonthLabel(d.key)}</text></g>`;
+  }).join('');
+  const costPoints=data.map((d,i)=>`${p.l+i*slot+slot/2},${yCost(d.cost)}`).join(' ');
+  const costDots=data.map((d,i)=>`<circle class="ncr-cost-dot" cx="${p.l+i*slot+slot/2}" cy="${yCost(d.cost)}" r="4"><title>${ncrMonthLabel(d.key)}: ${ncrMoney(d.cost)}</title></circle>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Monthly NCR count and cost comparison"><g><rect x="55" y="9" width="12" height="10" rx="2" class="ncr-month-bar"/><text x="73" y="18" font-size="10" fill="#6b7280">NCR count</text><line x1="145" y1="14" x2="170" y2="14" class="ncr-cost-line"/><text x="177" y="18" font-size="10" fill="#6b7280">Total cost</text></g>${grid}${bars}<polyline points="${costPoints}" fill="none" class="ncr-cost-line" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>${costDots}</svg>`;
 }
 function ncrCategoryRows(records){
   const map=new Map();
@@ -190,9 +200,6 @@ function ncrCostMix(records){
     delivery:records.reduce((s,r)=>s+Number(r.delivery||0),0)
   };
 }
-function ncrStatusBadge(r){
-  return String(r.investigated||'').trim()?'<span class="ncr-status done">Investigated</span>':'<span class="ncr-status open">Outstanding</span>';
-}
 function renderNcr(){
   const root=document.getElementById('ncrRoot');if(!root)return;
   if(!ncrLoaded){
@@ -201,11 +208,19 @@ function renderNcr(){
   if(!ncrState.records.length){
     root.innerHTML=`<div class="ncr-empty-state"><h2>NCR Tracker</h2><p>No NCR workbook has been imported yet.</p><label class="button primary" for="importFiles">Import NCR Excel</label><p class="ncr-small">You can also drag the workbook anywhere onto this page.</p></div>`;return;
   }
-  const records=ncrFiltered(),totalCost=records.reduce((s,r)=>s+Number(r.total||0),0),outstanding=records.filter(r=>!String(r.investigated||'').trim()).length;
-  const avg=records.length?totalCost/records.length:0,monthly=ncrMonthly(records),categories=ncrCategoryRows(records),costMix=ncrCostMix(records);
+  const records=ncrFiltered();
+  const trendRecords=ncrFiltered(true);
+  const totalCost=records.reduce((s,r)=>s+Number(r.total||0),0);
+  const avg=records.length?totalCost/records.length:0;
+  const monthly=ncrMonthly(trendRecords).slice(-12);
+  const categories=ncrCategoryRows(records),costMix=ncrCostMix(records);
+  const highValue=records.filter(r=>Number(r.total||0)>500).sort((a,b)=>Number(b.total||0)-Number(a.total||0));
+  const collectReplace=records.filter(r=>String(r.collectReplace||'').trim()).sort((a,b)=>(b.dateReported||'').localeCompare(a.dateReported||''));
   const maxCat=Math.max(1,...categories.map(x=>x.count));
   const catRows=categories.slice(0,8).map(x=>`<button class="ncr-category-row" data-ncr-category="${escapeHtml(x.name)}"><span class="ncr-cat-name">${escapeHtml(x.name)}</span><span class="ncr-cat-bar"><i style="width:${x.count/maxCat*100}%"></i></span><strong>${x.count}</strong><em>${ncrMoney(x.cost)}</em></button>`).join('');
-  const rows=records.slice(0,300).map(r=>`<tr class="ncr-row" data-ncr-row="${escapeHtml(r.rowId)}"><td><strong>${escapeHtml(r.ncrNo)}</strong></td><td>${r.dateReported?fmtDate(r.dateReported):'—'}</td><td>${escapeHtml(r.customer||'—')}</td><td>${escapeHtml(r.category||'—')}</td><td>${escapeHtml(r.employee||'—')}</td><td>${escapeHtml(r.details||r.finding||'—')}</td><td>${ncrStatusBadge(r)}</td><td class="right"><strong>${ncrMoney(r.total)}</strong></td></tr>`).join('');
+  const rows=records.slice(0,300).map(r=>`<tr class="ncr-row ${Number(r.total||0)>500?'ncr-high-value-row':''}" data-ncr-row="${escapeHtml(r.rowId)}"><td><strong>${escapeHtml(r.ncrNo)}</strong></td><td>${r.dateReported?fmtDate(r.dateReported):'—'}</td><td>${escapeHtml(r.customer||'—')}</td><td>${escapeHtml(r.category||'—')}</td><td>${escapeHtml(r.employee||'—')}</td><td>${escapeHtml(r.details||r.finding||'—')}</td><td class="right"><strong class="${Number(r.total||0)>500?'ncr-high-value':''}">${ncrMoney(r.total)}</strong></td></tr>`).join('');
+  const highRows=highValue.map(r=>`<tr class="ncr-row" data-ncr-row="${escapeHtml(r.rowId)}"><td><strong>${escapeHtml(r.ncrNo)}</strong></td><td>${r.dateReported?fmtDate(r.dateReported):'—'}</td><td>${escapeHtml(r.customer||'—')}</td><td>${escapeHtml(r.category||'—')}</td><td class="right"><strong class="ncr-high-value">${ncrMoney(r.total)}</strong></td></tr>`).join('');
+  const collectRows=collectReplace.map(r=>`<tr class="ncr-row" data-ncr-row="${escapeHtml(r.rowId)}"><td><strong>${escapeHtml(r.ncrNo)}</strong></td><td>${r.dateReported?fmtDate(r.dateReported):'—'}</td><td>${escapeHtml(r.customer||'—')}</td><td>${escapeHtml(r.collectReplace)}</td><td class="right"><strong>${ncrMoney(r.total)}</strong></td></tr>`).join('');
   const source=ncrState.sourceFile?escapeHtml(ncrState.sourceFile):'Saved NCR data';
   const updated=ncrState.importedAt?new Date(ncrState.importedAt).toLocaleString('en-GB'):'';
   root.innerHTML=`
@@ -214,21 +229,20 @@ function renderNcr(){
       <label class="button primary" for="importFiles">Import / Refresh Excel</label>
     </div>
     <div class="ncr-filters">
-      <select id="ncrPeriod"><option value="3">Last 3 months</option><option value="6">Last 6 months</option><option value="12">Last 12 months</option><option value="all">All data</option></select>
+      <select id="ncrPeriod"><option value="1">Last month</option><option value="3">Last 3 months</option><option value="6">Last 6 months</option><option value="12">Last 12 months</option><option value="all">All data</option></select>
       <input id="ncrSearch" type="text" placeholder="Search NCR, customer, site, complaint…" value="${escapeHtml(ncrFilters.search)}" />
       <select id="ncrCategory"><option value="">All categories</option>${ncrOptions('category').map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('')}</select>
       <select id="ncrEmployee"><option value="">All employees</option>${ncrOptions('employee').map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('')}</select>
-      <select id="ncrStatus"><option value="all">All investigations</option><option value="open">Outstanding</option><option value="investigated">Investigated</option></select>
       <button class="secondary" id="ncrClearFilters">Clear filters</button>
     </div>
     <div class="ncr-kpis">
       <div class="ncr-kpi"><span>NCRs</span><strong>${records.length}</strong><em>in current view</em></div>
       <div class="ncr-kpi"><span>Total NCR cost</span><strong>${ncrMoney(totalCost)}</strong><em>Beams + Posi + Ancillaries + Delivery</em></div>
       <div class="ncr-kpi"><span>Average cost / NCR</span><strong>${ncrMoney(avg)}</strong><em>current filtered view</em></div>
-      <div class="ncr-kpi"><span>Investigation outstanding</span><strong>${outstanding}</strong><em>${records.length?Math.round(outstanding/records.length*100):0}% of current NCRs</em></div>
+      <div class="ncr-kpi ncr-kpi-alert"><span>Over £500</span><strong>${highValue.length}</strong><em>${highValue.length?'requires attention':'none in current view'}</em></div>
     </div>
     <div class="ncr-grid">
-      <section class="ncr-card ncr-trend"><div class="ncr-card-head"><div><h3>Monthly NCR trend</h3><span>Number reported by month</span></div></div><div class="ncr-chart">${ncrMonthlySvg(monthly)}</div></section>
+      <section class="ncr-card ncr-trend"><div class="ncr-card-head"><div><h3>Monthly comparison</h3><span>Latest 12 months • NCR count compared with total NCR cost</span></div></div><div class="ncr-chart">${ncrMonthlySvg(monthly)}</div></section>
       <section class="ncr-card"><div class="ncr-card-head"><div><h3>Cost mix</h3><span>Current filtered view</span></div></div>
         <div class="ncr-cost-mix">
           <div><span>Beams</span><strong>${ncrMoney(costMix.beams)}</strong></div>
@@ -238,20 +252,22 @@ function renderNcr(){
         </div>
       </section>
     </div>
+    ${highValue.length?`<section class="ncr-card ncr-attention-card"><div class="ncr-card-head"><div><h3>£500+ NCRs requiring attention</h3><span>${highValue.length} NCR${highValue.length===1?'':'s'} above £500 in the current view</span></div></div><div class="ncr-table-wrap ncr-attention-table"><table><thead><tr><th>NCR</th><th>Date</th><th>Customer</th><th>Category</th><th class="right">Cost</th></tr></thead><tbody>${highRows}</tbody></table></div></section>`:''}
+    <section class="ncr-card ncr-collect-card"><div class="ncr-card-head"><div><h3>Collect & Replace</h3><span>${collectReplace.length?collectReplace.length+' NCR'+(collectReplace.length===1?'':'s')+' with a Collect & Replace entry':'No Collect & Replace entries in the current view'}</span></div></div>
+      <div class="ncr-table-wrap ncr-collect-table"><table><thead><tr><th>NCR</th><th>Date</th><th>Customer</th><th>Collect & Replace</th><th class="right">Cost</th></tr></thead><tbody>${collectRows||'<tr><td colspan="5"><div class="ncr-empty">No Collect & Replace entries.</div></td></tr>'}</tbody></table></div>
+    </section>
     <section class="ncr-card"><div class="ncr-card-head"><div><h3>NCR categories</h3><span>Click a category to filter the table</span></div></div><div class="ncr-category-list">${catRows||'<div class="ncr-empty">No categories.</div>'}</div></section>
     <section class="ncr-card"><div class="ncr-card-head"><div><h3>NCR register</h3><span>${records.length>300?`Showing latest 300 of ${records.length}`:`${records.length} record${records.length===1?'':'s'}`} • click an NCR for full details</span></div></div>
-      <div class="ncr-table-wrap"><table><thead><tr><th>NCR</th><th>Date</th><th>Customer</th><th>Category</th><th>Employee</th><th>Finding / detail</th><th>Investigation</th><th class="right">Cost</th></tr></thead><tbody>${rows||'<tr><td colspan="8"><div class="ncr-empty">No NCRs match the filters.</div></td></tr>'}</tbody></table></div>
+      <div class="ncr-table-wrap"><table><thead><tr><th>NCR</th><th>Date</th><th>Customer</th><th>Category</th><th>Employee</th><th>Finding / detail</th><th class="right">Cost</th></tr></thead><tbody>${rows||'<tr><td colspan="7"><div class="ncr-empty">No NCRs match the filters.</div></td></tr>'}</tbody></table></div>
     </section>`;
   const period=root.querySelector('#ncrPeriod');period.value=ncrFilters.period;
   const category=root.querySelector('#ncrCategory');category.value=ncrFilters.category;
   const employee=root.querySelector('#ncrEmployee');employee.value=ncrFilters.employee;
-  const status=root.querySelector('#ncrStatus');status.value=ncrFilters.status;
   period.addEventListener('change',e=>{ncrFilters.period=e.target.value;renderNcr()});
   root.querySelector('#ncrSearch').addEventListener('input',e=>{ncrFilters.search=e.target.value;clearTimeout(renderNcr.searchTimer);renderNcr.searchTimer=setTimeout(renderNcr,180)});
   category.addEventListener('change',e=>{ncrFilters.category=e.target.value;renderNcr()});
   employee.addEventListener('change',e=>{ncrFilters.employee=e.target.value;renderNcr()});
-  status.addEventListener('change',e=>{ncrFilters.status=e.target.value;renderNcr()});
-  root.querySelector('#ncrClearFilters').addEventListener('click',()=>{ncrFilters={period:'12',search:'',category:'',employee:'',customer:'',status:'all'};renderNcr()});
+  root.querySelector('#ncrClearFilters').addEventListener('click',()=>{ncrFilters={period:'1',search:'',category:'',employee:'',customer:''};renderNcr()});
   root.querySelectorAll('[data-ncr-category]').forEach(btn=>btn.addEventListener('click',()=>{ncrFilters.category=btn.dataset.ncrCategory;renderNcr()}));
   root.querySelectorAll('[data-ncr-row]').forEach(row=>row.addEventListener('click',()=>showNcrDetail(row.dataset.ncrRow)));
 }
@@ -282,7 +298,6 @@ function showNcrDetail(rowId){
     <div class="ncr-detail-costs"><div><span>Beams</span><strong>${ncrMoney(r.beams)}</strong></div><div><span>Posi</span><strong>${ncrMoney(r.posi)}</strong></div><div><span>Ancillaries</span><strong>${ncrMoney(r.ancillaries)}</strong></div><div><span>Delivery</span><strong>${ncrMoney(r.delivery)}</strong></div><div class="total"><span>Total</span><strong>${ncrMoney(r.total)}</strong></div></div>
     ${ncrDetailBlock('Complaint',r.complaint)}
     ${ncrDetailBlock('Corrective action',r.correctiveAction)}
-    ${ncrDetailBlock('Investigated',r.investigated)}
     ${ncrDetailBlock('NCR finding',r.finding)}
     ${ncrDetailBlock('Production comments',r.productionComments)}
     ${ncrDetailBlock('Collect and replace?',r.collectReplace)}
