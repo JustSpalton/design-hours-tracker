@@ -143,7 +143,44 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
   }
 
   if (path === "/api/unlock" && method === "POST") {
-    if (path === "/api/ncr" && method === "GET") {
+    const body = parseBody(options);
+    const pin = String(body.pin || "").trim();
+    if (!/^\d{4}$/.test(pin)) throw new Error("Enter a 4-digit PIN.");
+    const user = auth.currentUser;
+    if (!user) throw new Error("Secure session is not ready. Refresh and try again.");
+    const sessionRef = doc(db, "accessSessions", user.uid);
+    const expiresAt = Timestamp.fromMillis(Date.now() + 12 * 60 * 60 * 1000);
+    try {
+      await setDoc(sessionRef, { pin, verified: true, expiresAt });
+      return { ok: true };
+    } catch (error) {
+      if (String(error?.code || "").includes("permission-denied")) throw new Error("Incorrect PIN.");
+      throw error;
+    }
+  }
+
+  if (path === "/api/lock" && method === "POST") {
+    const user = auth.currentUser;
+    if (user) {
+      try { await deleteDoc(doc(db, "accessSessions", user.uid)); } catch (_) {}
+    }
+    return { ok: true };
+  }
+
+  if (path === "/api/data" && method === "GET") {
+    const data = await readRequired(stateRef, "Tracker data");
+    const result = canonicalizeStateNames(clone(data));
+    ensureTeams(result);
+    delete result.updatedAt;
+    return result;
+  }
+
+  if (path === "/api/breakdowns" && method === "GET") {
+    const snapshot = await getDoc(breakdownRef);
+    return snapshot.exists() ? { records: canonicalizeBreakdownRecords(clone(snapshot.data().records || [])) } : { records: [] };
+  }
+
+  if (path === "/api/ncr" && method === "GET") {
     const snapshot = await getDocs(ncrChunksRef);
     const chunks = snapshot.docs.map(item => item.data()).sort((a, b) => Number(a.index || 0) - Number(b.index || 0));
     const records = chunks.flatMap(item => Array.isArray(item.records) ? item.records : []);
@@ -151,7 +188,7 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
     return { records, sourceFile: latest.sourceFile || "", importedAt: latest.importedAt || null };
   }
 
-    const body = parseBody(options);
+  const body = parseBody(options);
 
   if (path === "/api/ncr-import" && method === "POST") {
     const incoming = Array.isArray(body.records) ? body.records.slice(0, 6000) : [];
@@ -174,46 +211,6 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
     await batch.commit();
     return { ok: true, saved: records.length, chunks: chunks.length, sourceFile, importedAt, records };
   }
-    const pin = String(body.pin || "").trim();
-    if (!/^\d{4}$/.test(pin)) throw new Error("Enter a 4-digit PIN.");
-    const user = auth.currentUser;
-    if (!user) throw new Error("Secure session is not ready. Refresh and try again.");
-    const sessionRef = doc(db, "accessSessions", user.uid);
-    const expiresAt = Timestamp.fromMillis(Date.now() + 12 * 60 * 60 * 1000);
-    try {
-      await setDoc(sessionRef, { pin, verified: true, expiresAt });
-      return { ok: true };
-    } catch (error) {
-      if (String(error?.code || "").includes("permission-denied")) {
-        throw new Error("Incorrect PIN.");
-      }
-      throw error;
-    }
-  }
-
-  if (path === "/api/lock" && method === "POST") {
-    const user = auth.currentUser;
-    if (user) {
-      try { await deleteDoc(doc(db, "accessSessions", user.uid)); } catch (_) {}
-    }
-    return { ok: true };
-  }
-
-  if (path === "/api/data" && method === "GET") {
-    const data = await readRequired(stateRef, "Tracker data");
-    const result = canonicalizeStateNames(clone(data));
-    ensureTeams(result);
-    delete result.updatedAt;
-    return result;
-  }
-
-
-  if (path === "/api/breakdowns" && method === "GET") {
-    const snapshot = await getDoc(breakdownRef);
-    return snapshot.exists() ? { records: canonicalizeBreakdownRecords(clone(snapshot.data().records || [])) } : { records: [] };
-  }
-
-  const body = parseBody(options);
 
   if (path === "/api/designers" && method === "POST") {
     const name = canonicalDesignerName(body.name);
