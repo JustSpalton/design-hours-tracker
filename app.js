@@ -95,14 +95,11 @@ async function importEstimatorFile(file){
   if(dated.records.length){
     const byWeek=new Map();
     for(const row of dated.records){if(!byWeek.has(row.week))byWeek.set(row.week,[]);byWeek.get(row.week).push({name:row.name,hours:row.hours})}
-    let imported=0,skipped=0;const weeks=[...byWeek.keys()].sort();
-    for(const week of weeks){
-      const result=await api('/api/import',{method:'POST',body:JSON.stringify({week,sourceFile:file.name,records:byWeek.get(week)})});
-      imported+=result.imported?.length||0;skipped+=result.skipped?.length||0;
-    }
+    const weeks=[...byWeek.keys()].sort();
+    const result=await api('/api/import-batch',{method:'POST',body:JSON.stringify({sourceFile:file.name,weeks:weeks.map(week=>({week,records:byWeek.get(week)}))})});
     if(weeks.length)selectedWeek=weeks.at(-1);
     if(dated.records.length)selectedDesigner=dated.records.at(-1).name;
-    return {imported,ignored:skipped+dated.ignored.length,weeks:weeks.length,mode:'dated'};
+    return {imported:result.imported?.length||0,ignored:(result.skipped?.length||0)+dated.ignored.length,weeks:result.weeks||weeks.length,mode:'dated'};
   }
 
   const wd=parseWeekFilename(file.name);
