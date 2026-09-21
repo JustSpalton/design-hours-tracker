@@ -7,6 +7,7 @@
       "firestore.indexes.json",
       "netlify.toml",
       "netlify/**",
+      "scripts/**",
       "node_modules/**",
       "package.json",
       "pnpm-lock.yaml",
