@@ -5,7 +5,7 @@ let ncrFilters={period:'12',search:'',category:'',employee:'',customer:'',status
 let selectedNcr=null;
 
 function ncrMoney(value){return new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2}).format(Number(value||0))}
-function ncrNormHeader(value){return String(value??'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ')}
+function ncrNormHeader(value){return String(value??'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()}
 function ncrText(cell){return String(cell?.w??cell?.v??'').replace(/\s+/g,' ').trim()}
 function ncrNumber(cell){
   if(!cell)return 0;
