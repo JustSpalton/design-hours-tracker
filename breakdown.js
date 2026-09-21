@@ -28,12 +28,12 @@ function addHours(obj,key,value){if(key&&Number.isFinite(value))obj[key]=Math.ro
 function breakdownColumns(ws,range){
   let productCol=null,statusCol=null;
   const report=getReportColumns(ws,range);
-  for(let r=range.s.r;r<=Math.min(range.e.r,range.s.r+30);r++)for(let c=range.s.c;c<=range.e.c;c++){
+  for(let r=range.s.r;r<=Math.min(range.e.r,range.s.r+60);r++)for(let c=range.s.c;c<=range.e.c;c++){
     const t=cellText(ws[XLSX.utils.encode_cell({r,c})]).replace(/\s+/g,' ').trim();
     if(productCol==null&&/^(?:product|product type|joist type|joist system|system)$/i.test(t))productCol=c;
     if(statusCol==null&&/^(?:status|job type|order type|quote type)$/i.test(t))statusCol=c;
   }
-  return {productCol,estimatorCol:report.estimatorCol,statusCol,hoursCol:report.hoursCol};
+  return {productCol,estimatorCol:report.estimatorCol,statusCol,hoursCol:report.hoursCol,dateCol:dateEnquiryDoneColumn(ws,range)};
 }
 function rowBreakdownValue(ws,r,range,preferredCol,normaliser){
   if(preferredCol!=null){
@@ -47,23 +47,26 @@ function rowBreakdownValue(ws,r,range,preferredCol,normaliser){
   }
   return '';
 }
-function extractBreakdowns(wb,week,sourceFile){
+function extractBreakdowns(wb,defaultWeek,sourceFile){
   const combined=new Map();
   for(const sheetName of wb.SheetNames){
     const ws=wb.Sheets[sheetName];if(!ws||!ws['!ref'])continue;const range=XLSX.utils.decode_range(ws['!ref']);
-    const {productCol,estimatorCol,statusCol,hoursCol}=breakdownColumns(ws,range);const starts=[];
+    const {productCol,estimatorCol,statusCol,hoursCol,dateCol}=breakdownColumns(ws,range);const starts=[];
     for(let r=range.s.r;r<=range.e.r;r++){const name=sectionNameAtRow(ws,r,range);if(name)starts.push({r,name})}
     for(let i=0;i<starts.length;i++){
       const start=starts[i],end=i+1<starts.length?starts[i+1].r-1:range.e.r;const designer=resolveBreakdownDesigner(start.name);if(!designer)continue;
-      const key=`${norm(designer)}|${week}`;
-      if(!combined.has(key))combined.set(key,{designer,week,products:{},statuses:{},product_hours:{},status_hours:{},source_file:sourceFile});
-      const rec=combined.get(key);
       for(let r=start.r+1;r<=end;r++){
         const rowEstimator=cellText(ws[XLSX.utils.encode_cell({r,c:estimatorCol})]);
         if(rowEstimator&&norm(rowEstimator)!==norm(start.name))continue;
+        const date=dateCol!=null?cellISODate(ws[XLSX.utils.encode_cell({r,c:dateCol})]):null;
+        const week=date?weekForDate(date):defaultWeek;
+        if(!week)continue;
         const product=rowBreakdownValue(ws,r,range,productCol,normalProduct);
         const status=rowBreakdownValue(ws,r,range,statusCol,normalStatus);
         if(!product&&!status)continue;
+        const key=`${norm(designer)}|${week}`;
+        if(!combined.has(key))combined.set(key,{designer,week,products:{},statuses:{},product_hours:{},status_hours:{},source_file:sourceFile});
+        const rec=combined.get(key);
         const hours=numericHours(ws[XLSX.utils.encode_cell({r,c:hoursCol})]);
         addCount(rec.products,product);addCount(rec.statuses,status);
         if(hours!=null&&hours>=0&&hours<=1000){addHours(rec.product_hours,product,hours);addHours(rec.status_hours,status,hours)}
@@ -75,7 +78,14 @@ function extractBreakdowns(wb,week,sourceFile){
 async function loadBreakdowns(){try{breakdownState=await api('/api/breakdowns')}catch(_){breakdownState={records:[]}}}
 async function saveBreakdownsFromFiles(files){
   const excel=[...files].filter(isExcelFile);if(!excel.length)return;const records=[];
-  for(const file of excel){try{const d=parseWeekFilename(file.name);if(!d)continue;const week=isoDate(d);const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true,cellFormula:true,cellNF:true,cellText:true});records.push(...extractBreakdowns(wb,week,file.name))}catch(e){console.warn('Breakdown import skipped',file.name,e)}}
+  for(const file of excel){
+    try{
+      const d=parseWeekFilename(file.name);
+      const defaultWeek=d&&d.getUTCDay()===1?isoDate(d):null;
+      const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true,cellFormula:true,cellNF:true,cellText:true});
+      records.push(...extractBreakdowns(wb,defaultWeek,file.name));
+    }catch(e){console.warn('Breakdown import skipped',file.name,e)}
+  }
   if(!records.length)return;
   try{
     breakdownState=await api('/api/breakdowns',{method:'POST',body:JSON.stringify({records})});
