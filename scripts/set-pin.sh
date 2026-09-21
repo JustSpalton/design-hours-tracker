@@ -11,13 +11,36 @@ if [[ ! "$PIN" =~ ^[0-9]{4}$ ]]; then
 fi
 
 TOKEN="$(gcloud auth print-access-token)"
-URL="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/tracker/security?updateMask.fieldPaths=pin"
+URL="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:commit"
 
-curl --fail --silent --show-error \
-  -X PATCH \
+BODY=$(cat <<EOF
+{
+  "writes": [
+    {
+      "update": {
+        "name": "projects/${PROJECT_ID}/databases/(default)/documents/tracker/security",
+        "fields": {
+          "pin": {
+            "stringValue": "${PIN}"
+          }
+        }
+      }
+    }
+  ]
+}
+EOF
+)
+
+RESPONSE="$(curl --silent --show-error \
+  -X POST \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
   "$URL" \
-  --data "{"fields":{"pin":{"stringValue":"${PIN}"}}}" >/dev/null
+  --data "$BODY")"
+
+if echo "$RESPONSE" | grep -q '"error"'; then
+  echo "$RESPONSE"
+  exit 1
+fi
 
 echo "Tracker PIN updated."
