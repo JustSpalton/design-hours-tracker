@@ -112,7 +112,6 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
     const expiresAt = Timestamp.fromMillis(Date.now() + 12 * 60 * 60 * 1000);
     try {
       await setDoc(sessionRef, { pin, verified: true, expiresAt });
-      await setDoc(sessionRef, { verified: true, expiresAt });
       return { ok: true };
     } catch (error) {
       if (String(error?.code || "").includes("permission-denied")) {
