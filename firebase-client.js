@@ -23,6 +23,7 @@ const db = getFirestore(firebaseApp);
 const stateRef = doc(db, "tracker", "state");
 const breakdownRef = doc(db, "tracker", "breakdowns");
 const ncrMetaRef = doc(db, "tracker", "ncrMeta");
+const ncrSourceRef = doc(db, "tracker", "ncrSource");
 
 window.firebaseReady = (async () => {
   await setPersistence(auth, browserSessionPersistence);
@@ -176,6 +177,18 @@ window.firebaseApi = async function firebaseApi(path, options = {}) {
   if (path === "/api/breakdowns" && method === "GET") {
     const snapshot = await getDoc(breakdownRef);
     return snapshot.exists() ? { records: canonicalizeBreakdownRecords(clone(snapshot.data().records || [])) } : { records: [] };
+  }
+
+  if (path === "/api/ncr-source" && method === "GET") {
+    const snapshot = await getDoc(ncrSourceRef);
+    if (!snapshot.exists()) return { configured: false };
+    const data = snapshot.data() || {};
+    return {
+      configured: Boolean(data.shareUrl && data.clientId),
+      shareUrl: String(data.shareUrl || ""),
+      clientId: String(data.clientId || ""),
+      tenant: String(data.tenant || "organizations")
+    };
   }
 
   if (path === "/api/ncr" && method === "GET") {
