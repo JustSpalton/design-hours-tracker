@@ -3,8 +3,7 @@ let ncrLoaded=false;
 let ncrLoading=false;
 let ncrFilters={period:'1',search:'',category:'',employee:'',customer:''};
 let selectedNcr=null;
-let ncrSharePoint={config:null,configured:false,connected:false,account:'',lastSync:null,status:''};
-let ncrMsal=null;
+let ncrLocalSync={handle:null,connected:false,fileName:'',lastModified:0,lastSync:null,status:'',supported:'showOpenFilePicker' in window};
 let ncrAutoTimer=null;
 
 function ncrMoney(value){return new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2}).format(Number(value||0))}
@@ -87,113 +86,145 @@ function parseNcrWorkbook(wb){
   return records;
 }
 
-function ncrShareToken(url){
-  const bytes=new TextEncoder().encode(String(url||''));
-  let binary='';for(const b of bytes)binary+=String.fromCharCode(b);
-  return 'u!'+btoa(binary).replace(/=+$/,'').replace(/\+/g,'-').replace(/\//g,'_');
-}
-async function loadNcrSourceConfig(){
-  try{
-    const config=await api('/api/ncr-source');
-    ncrSharePoint.config=config;
-    ncrSharePoint.configured=Boolean(config?.configured);
-    return config;
-  }catch(e){
-    console.warn('NCR SharePoint config unavailable',e);
-    ncrSharePoint.config={configured:false};
-    ncrSharePoint.configured=false;
-    return ncrSharePoint.config;
-  }
-}
-async function initNcrMsal(){
-  const config=ncrSharePoint.config||await loadNcrSourceConfig();
-  if(!config?.configured)return null;
-  if(!window.msal?.PublicClientApplication)throw new Error('Microsoft sign-in library did not load.');
-  if(ncrMsal)return ncrMsal;
-  ncrMsal=new window.msal.PublicClientApplication({
-    auth:{
-      clientId:config.clientId,
-      authority:`https://login.microsoftonline.com/${config.tenant||'organizations'}`,
-      redirectUri:window.location.origin
-    },
-    cache:{cacheLocation:'sessionStorage'}
+function ncrHandleDb(){
+  return new Promise((resolve,reject)=>{
+    const request=indexedDB.open('dte-ncr-local-sync',1);
+    request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains('handles'))db.createObjectStore('handles')};
+    request.onsuccess=()=>resolve(request.result);
+    request.onerror=()=>reject(request.error);
   });
-  if(typeof ncrMsal.initialize==='function')await ncrMsal.initialize();
-  return ncrMsal;
 }
-async function ncrMicrosoftToken(interactive=false){
-  const instance=await initNcrMsal();if(!instance)return null;
-  let account=instance.getAllAccounts?.()[0]||null;
-  if(!account&&!interactive)return null;
-  if(!account){
-    const login=await instance.loginPopup({scopes:['Files.Read']});
-    account=login.account;
-  }
-  if(!account)return null;
-  ncrSharePoint.account=account.username||account.name||'Microsoft 365';
-  try{
-    const result=await instance.acquireTokenSilent({scopes:['Files.Read'],account});
-    return result.accessToken;
-  }catch(e){
-    if(!interactive)return null;
-    const result=await instance.acquireTokenPopup({scopes:['Files.Read'],account});
-    return result.accessToken;
-  }
+async function saveNcrLocalHandle(handle){
+  const db=await ncrHandleDb();
+  await new Promise((resolve,reject)=>{
+    const tx=db.transaction('handles','readwrite');
+    tx.objectStore('handles').put(handle,'ncrWorkbook');
+    tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
+  });
+  db.close();
 }
-async function syncNcrFromSharePoint(interactive=false){
-  const config=ncrSharePoint.config||await loadNcrSourceConfig();
-  if(!config?.configured){
-    ncrSharePoint.status='SharePoint setup required';
-    renderNcr();return false;
-  }
-  const token=await ncrMicrosoftToken(interactive);
-  if(!token){
-    ncrSharePoint.connected=false;
-    ncrSharePoint.status='Connect Microsoft 365 to refresh live';
-    renderNcr();return false;
-  }
-  ncrSharePoint.status='Refreshing from SharePoint…';renderNcr();
+async function getNcrLocalHandle(){
   try{
-    const shareId=ncrShareToken(config.shareUrl);
-    const graphUrl=`https://graph.microsoft.com/v1.0/shares/${encodeURIComponent(shareId)}/driveItem?$select=id,name,eTag,lastModifiedDateTime,@microsoft.graph.downloadUrl`;
-    const itemResponse=await fetch(graphUrl,{headers:{Authorization:`Bearer ${token}`}});
-    if(!itemResponse.ok){
-      let detail='';try{const j=await itemResponse.json();detail=j?.error?.message||''}catch(_){}
-      throw new Error(detail||`Microsoft Graph returned ${itemResponse.status}.`);
-    }
-    const item=await itemResponse.json();
-    const downloadUrl=item['@microsoft.graph.downloadUrl'];
-    if(!downloadUrl)throw new Error('SharePoint did not return a workbook download URL.');
-    const fileResponse=await fetch(downloadUrl);
-    if(!fileResponse.ok)throw new Error(`SharePoint workbook download failed (${fileResponse.status}).`);
-    const buffer=await fileResponse.arrayBuffer();
-    const wb=XLSX.read(buffer,{type:'array',cellDates:true,cellFormula:true,cellNF:true,cellText:true});
-    const records=parseNcrWorkbook(wb);
-    const saved=await api('/api/ncr-import',{method:'POST',body:JSON.stringify({sourceFile:`SharePoint: ${item.name||'NCR workbook'}`,records})});
-    ncrState={records:saved.records||records,sourceFile:saved.sourceFile||item.name||'SharePoint NCR workbook',importedAt:saved.importedAt||new Date().toISOString()};
-    ncrLoaded=true;
-    ncrSharePoint.connected=true;
-    ncrSharePoint.lastSync=new Date().toISOString();
-    ncrSharePoint.status=`Live SharePoint • ${records.length} NCRs`;
-    if(!ncrAutoTimer)ncrAutoTimer=setInterval(()=>{if(currentAppTab==='ncr')syncNcrFromSharePoint(false)},5*60*1000);
-    renderNcr();
-    if(interactive)showToast('NCR data refreshed from SharePoint');
+    const db=await ncrHandleDb();
+    const value=await new Promise((resolve,reject)=>{
+      const tx=db.transaction('handles','readonly');
+      const req=tx.objectStore('handles').get('ncrWorkbook');
+      req.onsuccess=()=>resolve(req.result||null);
+      req.onerror=()=>reject(req.error);
+    });
+    db.close();return value;
+  }catch(e){console.warn('Could not restore NCR file handle',e);return null}
+}
+async function ncrHandlePermission(handle,request=false){
+  if(!handle)return false;
+  const opts={mode:'read'};
+  try{
+    if(await handle.queryPermission(opts)==='granted')return true;
+    if(request&&await handle.requestPermission(opts)==='granted')return true;
+  }catch(e){console.warn('NCR file permission check failed',e)}
+  return false;
+}
+async function restoreNcrLocalFile(){
+  if(!ncrLocalSync.supported){
+    ncrLocalSync.status='Use Microsoft Edge or Chrome on this PC for synced-file access.';
+    return false;
+  }
+  const handle=await getNcrLocalHandle();
+  if(!handle){
+    ncrLocalSync.status='Connect the synced NCR workbook';
+    return false;
+  }
+  ncrLocalSync.handle=handle;
+  ncrLocalSync.fileName=handle.name||'NCR workbook';
+  const allowed=await ncrHandlePermission(handle,false);
+  ncrLocalSync.connected=allowed;
+  ncrLocalSync.status=allowed?'Synced workbook connected':'Reconnect the synced NCR workbook';
+  if(allowed){
+    if(!ncrAutoTimer)ncrAutoTimer=setInterval(()=>{if(currentAppTab==='ncr')syncNcrFromLocalFile(false)},2*60*1000);
     return true;
+  }
+  return false;
+}
+async function connectNcrLocalFile(){
+  if(!ncrLocalSync.supported){
+    alert('This browser cannot remember a local synced file. Open the tracker in Microsoft Edge or Google Chrome.');
+    return false;
+  }
+  try{
+    const [handle]=await window.showOpenFilePicker({
+      multiple:false,
+      types:[{
+        description:'Excel workbooks',
+        accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx','.xlsm'],'application/vnd.ms-excel':['.xls']}
+      }]
+    });
+    if(!handle)return false;
+    ncrLocalSync.handle=handle;
+    ncrLocalSync.fileName=handle.name||'NCR workbook';
+    await saveNcrLocalHandle(handle);
+    const allowed=await ncrHandlePermission(handle,true);
+    if(!allowed)throw new Error('Permission to read the synced workbook was not granted.');
+    ncrLocalSync.connected=true;
+    ncrLocalSync.status='Synced workbook connected';
+    if(!ncrAutoTimer)ncrAutoTimer=setInterval(()=>{if(currentAppTab==='ncr')syncNcrFromLocalFile(false)},2*60*1000);
+    return await syncNcrFromLocalFile(true);
   }catch(e){
-    ncrSharePoint.connected=false;
-    ncrSharePoint.status=e?.message||'SharePoint refresh failed';
+    if(e?.name==='AbortError')return false;
+    ncrLocalSync.connected=false;
+    ncrLocalSync.status=e?.message||'Could not connect the synced workbook';
     renderNcr();
-    if(interactive)alert(ncrSharePoint.status);
-    console.warn('SharePoint NCR sync failed',e);
+    alert(ncrLocalSync.status);
     return false;
   }
 }
-function ncrSharePointControls(){
-  if(!ncrSharePoint.configured)return '<span class="ncr-sp-status muted">SharePoint not configured</span>';
-  const button=ncrSharePoint.connected?'Refresh SharePoint':'Connect SharePoint';
-  const cls=ncrSharePoint.connected?'connected':'';
-  const detail=ncrSharePoint.lastSync?`Last synced ${new Date(ncrSharePoint.lastSync).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}`:(ncrSharePoint.status||'Microsoft 365 connection required');
-  return `<div class="ncr-sp-controls"><span class="ncr-sp-status ${cls}">${escapeHtml(detail)}</span><button type="button" class="secondary" id="ncrSharePointBtn">${button}</button></div>`;
+async function syncNcrFromLocalFile(interactive=false){
+  const handle=ncrLocalSync.handle||await getNcrLocalHandle();
+  if(!handle){
+    ncrLocalSync.connected=false;ncrLocalSync.status='Connect the synced NCR workbook';renderNcr();return false;
+  }
+  ncrLocalSync.handle=handle;
+  const allowed=await ncrHandlePermission(handle,interactive);
+  if(!allowed){
+    ncrLocalSync.connected=false;ncrLocalSync.status='Reconnect the synced NCR workbook';renderNcr();return false;
+  }
+  try{
+    const file=await handle.getFile();
+    ncrLocalSync.fileName=file.name||handle.name||'NCR workbook';
+    if(!interactive&&ncrLocalSync.lastModified&&file.lastModified===ncrLocalSync.lastModified){
+      ncrLocalSync.connected=true;
+      ncrLocalSync.status='Synced workbook up to date';
+      renderNcr();
+      return true;
+    }
+    ncrLocalSync.status='Reading synced workbook…';renderNcr();
+    const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true,cellFormula:true,cellNF:true,cellText:true});
+    const records=parseNcrWorkbook(wb);
+    const saved=await api('/api/ncr-import',{method:'POST',body:JSON.stringify({sourceFile:`OneDrive/SharePoint: ${file.name}`,records})});
+    ncrState={records:saved.records||records,sourceFile:saved.sourceFile||file.name,importedAt:saved.importedAt||new Date().toISOString()};
+    ncrLoaded=true;
+    ncrLocalSync.connected=true;
+    ncrLocalSync.lastModified=file.lastModified||0;
+    ncrLocalSync.lastSync=new Date().toISOString();
+    ncrLocalSync.status=`${records.length} NCRs synced`;
+    renderNcr();
+    if(interactive)showToast('NCR data synced from the OneDrive file');
+    return true;
+  }catch(e){
+    ncrLocalSync.connected=false;
+    ncrLocalSync.status=e?.message||'Synced NCR file could not be read';
+    renderNcr();
+    if(interactive)alert(ncrLocalSync.status);
+    console.warn('Local NCR sync failed',e);
+    return false;
+  }
+}
+function ncrLocalControls(){
+  if(!ncrLocalSync.supported)return '<span class="ncr-sp-status muted">Open in Edge or Chrome to connect the synced NCR file</span>';
+  const button=ncrLocalSync.handle?(ncrLocalSync.connected?'Refresh synced file':'Reconnect synced file'):'Connect synced NCR file';
+  const cls=ncrLocalSync.connected?'connected':'';
+  let detail=ncrLocalSync.status||'Connect the OneDrive-synced SharePoint workbook';
+  if(ncrLocalSync.lastSync)detail=`${ncrLocalSync.fileName||'NCR workbook'} • synced ${new Date(ncrLocalSync.lastSync).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}`;
+  return `<div class="ncr-sp-controls"><span class="ncr-sp-status ${cls}">${escapeHtml(detail)}</span><button type="button" class="secondary" id="ncrLocalFileBtn">${button}</button></div>`;
 }
 
 async function importNcrMany(files){
@@ -223,10 +254,12 @@ async function loadNcrData(silent=false){
   if(ncrLoading)return;
   ncrLoading=true;
   try{
-    const [data]=await Promise.all([api('/api/ncr'),loadNcrSourceConfig()]);
+    const data=await api('/api/ncr');
     ncrState={records:data.records||[],sourceFile:data.sourceFile||'',importedAt:data.importedAt||null};
-    ncrLoaded=true;renderNcr();
-    if(ncrSharePoint.configured)syncNcrFromSharePoint(false);
+    ncrLoaded=true;
+    const restored=await restoreNcrLocalFile();
+    renderNcr();
+    if(restored)syncNcrFromLocalFile(false);
     if(!silent&&ncrState.records.length)showToast('NCR tracker refreshed');
   }catch(e){
     const message=e?.message||'NCR data could not be loaded';
@@ -319,7 +352,7 @@ function renderNcr(){
     root.innerHTML='<div class="ncr-loading">Loading NCR tracker…</div>';return;
   }
   if(!ncrState.records.length){
-    root.innerHTML=`<div class="ncr-empty-state"><h2>NCR Tracker</h2><p>No NCR workbook has been imported yet.</p><div class="ncr-empty-actions">${ncrSharePointControls()}<label class="button primary" for="importFiles">Import NCR Excel</label></div><p class="ncr-small">Connect SharePoint for live data, or import the workbook manually as a fallback.</p></div>`;document.getElementById('ncrSharePointBtn')?.addEventListener('click',()=>syncNcrFromSharePoint(true));return;
+    root.innerHTML=`<div class="ncr-empty-state"><h2>NCR Tracker</h2><p>No NCR workbook has been imported yet.</p><div class="ncr-empty-actions">${ncrLocalControls()}<label class="button primary" for="importFiles">Import NCR Excel</label></div><p class="ncr-small">Connect the OneDrive-synced SharePoint workbook for live data, or import the workbook manually as a fallback.</p></div>`;document.getElementById('ncrLocalFileBtn')?.addEventListener('click',()=>{if(ncrLocalSync.handle)syncNcrFromLocalFile(true);else connectNcrLocalFile()});return;
   }
   const records=ncrFiltered();
   const trendRecords=ncrFiltered(true);
@@ -339,7 +372,7 @@ function renderNcr(){
   root.innerHTML=`
     <div class="ncr-head">
       <div><div class="dashboard-kicker">NCR TRACKER</div><h2>Non-Conformance Dashboard</h2><p>${source}${updated?' • updated '+escapeHtml(updated):''}</p></div>
-      <div class="ncr-head-actions">${ncrSharePointControls()}<label class="button primary" for="importFiles">Import Excel</label></div>
+      <div class="ncr-head-actions">${ncrLocalControls()}<label class="button primary" for="importFiles">Import Excel manually</label></div>
     </div>
     <div class="ncr-filters">
       <select id="ncrPeriod"><option value="1">Last month</option><option value="3">Last 3 months</option><option value="6">Last 6 months</option><option value="12">Last 12 months</option><option value="all">All data</option></select>
@@ -373,7 +406,7 @@ function renderNcr(){
     <section class="ncr-card"><div class="ncr-card-head"><div><h3>NCR register</h3><span>${records.length>300?`Showing latest 300 of ${records.length}`:`${records.length} record${records.length===1?'':'s'}`} • click an NCR for full details</span></div></div>
       <div class="ncr-table-wrap"><table><thead><tr><th>NCR</th><th>Date</th><th>Customer</th><th>Category</th><th>Employee</th><th>Finding / detail</th><th class="right">Cost</th></tr></thead><tbody>${rows||'<tr><td colspan="7"><div class="ncr-empty">No NCRs match the filters.</div></td></tr>'}</tbody></table></div>
     </section>`;
-  document.getElementById('ncrSharePointBtn')?.addEventListener('click',()=>syncNcrFromSharePoint(true));
+  document.getElementById('ncrLocalFileBtn')?.addEventListener('click',()=>{if(ncrLocalSync.handle)syncNcrFromLocalFile(true);else connectNcrLocalFile()});
   const period=root.querySelector('#ncrPeriod');period.value=ncrFilters.period;
   const category=root.querySelector('#ncrCategory');category.value=ncrFilters.category;
   const employee=root.querySelector('#ncrEmployee');employee.value=ncrFilters.employee;
@@ -437,7 +470,7 @@ function switchAppTab(tab){
   updateAppImportContext();
   if(currentAppTab==='ncr'){
     document.body.classList.remove('dashboard-home');
-    if(!ncrLoaded)loadNcrData(true);else renderNcr();
+    if(!ncrLoaded)loadNcrData(true);else{renderNcr();if(ncrLocalSync.connected)syncNcrFromLocalFile(false)};
   }else{
     renderDetail();
   }
