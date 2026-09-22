@@ -226,10 +226,13 @@ async function syncNcrFromLocalFile(interactive=false){
 }
 function ncrLocalControls(){
   if(!ncrLocalSync.supported)return '<span class="ncr-sp-status muted">Open in Edge or Chrome to connect the synced NCR file</span>';
-  const button=ncrLocalSync.handle?(ncrLocalSync.connected?'Refresh synced file':'Reconnect synced file'):'Connect synced NCR file';
   const cls=ncrLocalSync.connected?'connected':'';
   let detail=ncrLocalSync.status||'Connect the OneDrive-synced SharePoint workbook';
   if(ncrLocalSync.lastSync)detail=`${ncrLocalSync.fileName||'NCR workbook'} • synced ${new Date(ncrLocalSync.lastSync).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}`;
+  if(ncrLocalSync.connected){
+    return `<div class="ncr-sp-controls"><span class="ncr-sp-status ${cls}">${escapeHtml(detail)}</span><button type="button" class="secondary" id="ncrLocalFileBtn">Refresh synced file</button><button type="button" class="secondary" id="ncrChangeFileBtn">Change file</button></div>`;
+  }
+  const button=ncrLocalSync.handle?'Choose a different file':'Connect synced NCR file';
   return `<div class="ncr-sp-controls"><span class="ncr-sp-status ${cls}">${escapeHtml(detail)}</span><button type="button" class="secondary" id="ncrLocalFileBtn">${button}</button></div>`;
 }
 
@@ -358,7 +361,8 @@ function renderNcr(){
     root.innerHTML='<div class="ncr-loading">Loading NCR tracker…</div>';return;
   }
   if(!ncrState.records.length){
-    root.innerHTML=`<div class="ncr-empty-state"><h2>NCR Tracker</h2><p>No NCR workbook has been imported yet.</p><div class="ncr-empty-actions">${ncrLocalControls()}<label class="button primary" for="importFiles">Import NCR Excel</label></div><p class="ncr-small">Connect the OneDrive-synced SharePoint workbook for live data, or import the workbook manually as a fallback.</p></div>`;document.getElementById('ncrLocalFileBtn')?.addEventListener('click',()=>{if(ncrLocalSync.handle)syncNcrFromLocalFile(true);else connectNcrLocalFile()});return;
+    root.innerHTML=`<div class="ncr-empty-state"><h2>NCR Tracker</h2><p>No NCR workbook has been imported yet.</p><div class="ncr-empty-actions">${ncrLocalControls()}<label class="button primary" for="importFiles">Import NCR Excel</label></div><p class="ncr-small">Connect the OneDrive-synced SharePoint workbook for live data, or import the workbook manually as a fallback.</p></div>`;document.getElementById('ncrLocalFileBtn')?.addEventListener('click',()=>{if(ncrLocalSync.connected)syncNcrFromLocalFile(true);else connectNcrLocalFile()});
+  document.getElementById('ncrChangeFileBtn')?.addEventListener('click',()=>connectNcrLocalFile());return;
   }
   const records=ncrFiltered();
   const trendRecords=ncrFiltered(true);
@@ -412,7 +416,8 @@ function renderNcr(){
     <section class="ncr-card"><div class="ncr-card-head"><div><h3>NCR register</h3><span>${records.length>300?`Showing latest 300 of ${records.length}`:`${records.length} record${records.length===1?'':'s'}`} • click an NCR for full details</span></div></div>
       <div class="ncr-table-wrap"><table><thead><tr><th>NCR</th><th>Date</th><th>Customer</th><th>Category</th><th>Employee</th><th>Finding / detail</th><th class="right">Cost</th></tr></thead><tbody>${rows||'<tr><td colspan="7"><div class="ncr-empty">No NCRs match the filters.</div></td></tr>'}</tbody></table></div>
     </section>`;
-  document.getElementById('ncrLocalFileBtn')?.addEventListener('click',()=>{if(ncrLocalSync.handle)syncNcrFromLocalFile(true);else connectNcrLocalFile()});
+  document.getElementById('ncrLocalFileBtn')?.addEventListener('click',()=>{if(ncrLocalSync.connected)syncNcrFromLocalFile(true);else connectNcrLocalFile()});
+  document.getElementById('ncrChangeFileBtn')?.addEventListener('click',()=>connectNcrLocalFile());
   const period=root.querySelector('#ncrPeriod');period.value=ncrFilters.period;
   const category=root.querySelector('#ncrCategory');category.value=ncrFilters.category;
   const employee=root.querySelector('#ncrEmployee');employee.value=ncrFilters.employee;
