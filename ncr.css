@@ -33,3 +33,5 @@ body.tracker-locked>.app-tabs{display:none!important}
 .ncr-sp-status.muted{color:var(--muted);background:#f4f4f4;border-color:#d5d5d5}
 .ncr-empty-actions{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin:14px 0}
 @media(max-width:650px){.ncr-head-actions,.ncr-sp-controls{width:100%;align-items:stretch;flex-direction:column}.ncr-head-actions .button,.ncr-sp-controls button{width:100%;text-align:center}.ncr-sp-status{justify-content:center}}
+
+.ncr-sp-status.connected:after{content:"Local sync";font-size:8px;letter-spacing:.04em;text-transform:uppercase;opacity:.7;margin-left:2px}
