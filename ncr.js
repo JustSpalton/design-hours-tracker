@@ -198,7 +198,13 @@ async function syncNcrFromLocalFile(interactive=false){
     }
     ncrLocalSync.status='Reading synced workbook…';renderNcr();
     const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true,cellFormula:true,cellNF:true,cellText:true});
-    const records=parseNcrWorkbook(wb);
+    let records;
+    try{
+      records=parseNcrWorkbook(wb);
+    }catch(parseError){
+      const sheets=Array.isArray(wb.SheetNames)&&wb.SheetNames.length?wb.SheetNames.join(', '):'none';
+      throw new Error(`${file.name}: ${parseError?.message||'NCR workbook could not be read'} Sheets found: ${sheets}`);
+    }
     const saved=await api('/api/ncr-import',{method:'POST',body:JSON.stringify({sourceFile:`OneDrive/SharePoint: ${file.name}`,records})});
     ncrState={records:saved.records||records,sourceFile:saved.sourceFile||file.name,importedAt:saved.importedAt||new Date().toISOString()};
     ncrLoaded=true;
